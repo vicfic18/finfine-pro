@@ -1,41 +1,50 @@
 {
-  "name": "amplify-vite-react-template",
+  "name": "finfine-pro",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
   },
   "dependencies": {
-    "@aws-amplify/ui-react": "~6.13.2",
-    "aws-amplify": "~6.15.10",
-    "react": "~18.3.1",
-    "react-dom": "~18.3.1"
-  },
-  "engines": {
-    "node": ">= 20.20.0",
-    "npm": ">= 10.8.0"
+    "@aws-amplify/adapter-nextjs": "^1.7.3",
+    "@aws-amplify/ui-react": "^6.15.6",
+    "aws-amplify": "^6.20.0",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@aws-amplify/backend": "~1.19.0",
-    "@aws-amplify/backend-cli": "~1.8.1",
-    "@eslint/compat":  "~2.0.1",
-    "@eslint/eslintrc": "~3.3.3",
-    "@eslint/js": "~9.39.2",
-    "@types/react": "~18.3.27",
-    "@types/react-dom": "~18.3.7",
-    "@typescript-eslint/eslint-plugin": "~8.53.0",
-    "@typescript-eslint/parser": "~8.53.0",
-    "@vitejs/plugin-react": "~5.1.2",
-    "esbuild": "~0.27.2",
-    "eslint": "~9.39.2",
-    "eslint-plugin-react-hooks": "~7.0.1",
-    "eslint-plugin-react-refresh": "~0.4.26",
-    "globals": "~17.0.0",
-    "typescript": "~5.9.3",
-    "vite": "~7.3.1"
+    "@aws-amplify/backend": "^1.25.0",
+    "@aws-amplify/backend-cli": "^1.10.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "aws-cdk-lib": "^2.269.0",
+    "constructs": "^10.8.1",
+    "esbuild": "^0.28.2",
+    "eslint": "^9",
+    "eslint-config-next": "^16.3.5",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "csv-parse": "^7.0.2",
+    "mysql2": "^3.24.4",
+    "immutable": "^5.1.9",
+    "lodash": "^4.18.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true,
+    "@parcel/watcher@2.6.0": true,
+    "core-js@3.50.0": true,
+    "core-js@2.6.12": true,
+    "@aws-amplify/hosting@1.0.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
