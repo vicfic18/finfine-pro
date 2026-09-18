@@ -45,7 +45,6 @@ export default function Home() {
       setUploadedKey(key);
       setStatus(`Successfully uploaded! Key: ${key}`);
 
-      // Get a presigned URL to view/download the uploaded file
       const link = await getUrl({ path: key });
       setUploadedUrl(link.url.toString());
       setFile(null);
@@ -71,50 +70,60 @@ export default function Home() {
   };
 
   return (
-    <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '600px', margin: '0 auto' }}>
-      <h2>Amazon S3 File Uploader</h2>
-      <p style={{ color: '#666' }}>Upload invoices, statements, or receipts directly to Amazon S3 using AWS Amplify Gen 2.</p>
+    <main>
+      <h1>Amazon S3 File Uploader</h1>
+      <p>Upload invoices, statements, or receipts directly to Amazon S3 using AWS Amplify Gen 2.</p>
 
-      <form onSubmit={handleUpload} style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
-        <input 
-          type="file" 
-          onChange={handleFileChange} 
-          disabled={loading}
-          style={{ display: 'block', marginBottom: '1rem' }}
-        />
-        <button 
-          type="submit" 
-          disabled={!file || loading}
-          style={{ padding: '0.5rem 1rem', cursor: loading ? 'not-allowed' : 'pointer' }}
-        >
-          {loading ? 'Uploading...' : 'Upload to S3'}
-        </button>
+      <form onSubmit={handleUpload}>
+        <p>
+          <label htmlFor="file-input">
+            <strong>Choose file: </strong>
+          </label>
+          <input
+            id="file-input"
+            type="file"
+            onChange={handleFileChange}
+            disabled={loading}
+          />
+        </p>
+
+        {file && (
+          <p>
+            Selected file: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
+          </p>
+        )}
+
+        <p>
+          <button type="submit" disabled={loading}>
+            {loading ? 'Uploading...' : 'Upload to S3'}
+          </button>
+        </p>
       </form>
 
       {status && (
-        <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#f0f0f0', border: '1px solid #ccc' }}>
+        <p>
           <strong>Status:</strong> {status}
-        </div>
+        </p>
       )}
 
       {uploadedUrl && (
-        <div style={{ marginTop: '1rem' }}>
-          <p><strong>View Uploaded File:</strong></p>
+        <p>
+          <strong>View Uploaded File: </strong>
           <a href={uploadedUrl} target="_blank" rel="noopener noreferrer">
             Open {uploadedKey}
           </a>
-        </div>
+        </p>
       )}
 
-      <hr style={{ margin: '2rem 0' }} />
+      <hr />
 
-      <div>
-        <h3>Browse S3 Objects</h3>
-        <button onClick={handleListFiles} style={{ padding: '0.4rem 0.8rem', cursor: 'pointer' }}>
-          List S3 Files in &quot;public/&quot;
+      <section>
+        <h2>Browse S3 Objects</h2>
+        <button type="button" onClick={handleListFiles}>
+          List S3 Files in public/
         </button>
         {fileList.length > 0 && (
-          <ul style={{ marginTop: '1rem' }}>
+          <ul>
             {fileList.map((path) => (
               <li key={path}>
                 <code>{path}</code>
@@ -122,7 +131,7 @@ export default function Home() {
             ))}
           </ul>
         )}
-      </div>
+      </section>
     </main>
   );
 }
