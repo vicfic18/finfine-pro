@@ -2,12 +2,13 @@
 
 ## Current Scope
 
-This first increment provides read-only financial tools for a future Strands
-agent. The tools run on a developer's computer and read the existing DynamoDB
-tables in AWS. They do not change financial records.
+The current implementation provides a local Strands agent with read-only
+financial tools. The agent runs on a developer's computer, reads the existing
+DynamoDB tables, and sends calculations to AgentCore Code Interpreter in AWS.
+It does not change financial records.
 
-The agent loop, AgentCore Code Interpreter, API, and extra demonstration data
-are intentionally left for later increments.
+The API and extra demonstration data are intentionally left for later
+increments.
 
 ## Available Tools
 
@@ -36,9 +37,37 @@ the three DynamoDB tables.
 ```bash
 cd agent_backend
 uv sync
+cp env.example .env
 ```
 
-Export the values shown in `agent_backend/env.example`, then import the tools:
+Open `agent_backend/.env` and replace `replace-with-your-own-groq-key` with your
+personal Groq API key. Each teammate must create their own key and local `.env`
+file. The `.env` file is ignored by Git and must never be committed.
+
+The verified Groq model identifier is `qwen/qwen3-32b`. Groq's current model
+documentation does not list `qwen/qwen3.8-27b`. To start a conversation:
+
+```bash
+uv run python -m finfine_agent.agent
+```
+
+To ask one question and exit:
+
+```bash
+uv run python -m finfine_agent.agent "What is my latest balance?"
+```
+
+Tracing is enabled by default. The terminal shows normal model output, tool
+names, tool inputs, tool results, duration, errors, and the final answer.
+Secrets are redacted. Hidden chain-of-thought is not shown; the agent provides
+short action summaries instead. Use `--quiet` when only the final answer is
+needed.
+
+The model settings use Groq's OpenAI-compatible endpoint at
+`https://api.groq.com/openai/v1`. The application also accepts an exported
+`GROQ_API_KEY`; an exported value takes precedence over the local `.env` file.
+
+The tools can also be imported directly:
 
 ```python
 from finfine_agent import (
@@ -48,8 +77,31 @@ from finfine_agent import (
 )
 ```
 
-Strands will call these functions after the agent loop is added. The tenant is
-set by `FINFINE_TENANT_ID`; it is not accepted as an agent-controlled argument.
+The tenant is set by `FINFINE_TENANT_ID`; it is not accepted as an
+agent-controlled argument.
+
+## Code Execution
+
+AgentCore Code Interpreter runs code in an isolated AWS session. The agent uses
+Python for exact calculations, cash projections, statistics, charts, and small
+machine-learning experiments. Common libraries such as pandas, NumPy,
+scikit-learn, statsmodels, XGBoost, PyTorch, PuLP, and OR-Tools are available in
+the managed environment.
+
+The current instructions prevent the agent from using code to access DynamoDB,
+credentials, environment variables, or the internet. Financial records are
+read only through the three controlled tools and only the required values are
+passed into the interpreter. The agent receives a Python-only tool; terminal
+commands and AgentCore's wider file-management actions are not exposed.
+
+Predictions must be described as estimates. The current sample has too little
+unique history for a dependable ML forecast, so any model trained on it is only
+a technical demonstration.
+
+The first live capability check reached AgentCore but could not start a session
+because the AWS account's current Code Interpreter session limit was already in
+use. An existing session must finish or be stopped before live code execution
+can be tested.
 
 ## Current AWS Test Data
 
@@ -61,7 +113,7 @@ can identify the same payment reference.
 
 ## Planned Flow
 
-1. The local Strands agent receives a financial question.
+1. The local Strands agent receives a financial question through the terminal.
 2. It calls these tools to read the required records from DynamoDB.
 3. AgentCore Code Interpreter performs calculations in AWS.
 4. The agent explains the result in plain language.
@@ -70,3 +122,73 @@ can identify the same payment reference.
 The future API can be hosted in AgentCore Runtime and called by a server-side
 Next.js route. Lambda, API Gateway, and SAM are not required for that path. The
 deployment choice will be confirmed when the API increment begins.
+
+## End-to-End Test
+
+1. Confirm AWS access:
+
+   ```bash
+   aws sts get-caller-identity
+   ```
+
+2. Prepare the local environment:
+
+   ```bash
+   cd agent_backend
+   uv sync
+   cp env.example .env
+   ```
+
+3. Put a personal Groq key in `.env`, then run the local checks:
+
+   ```bash
+   uv run pytest -q
+   ```
+
+4. Start the agent with terminal tracing:
+
+   ```bash
+   uv run python -m finfine_agent.agent
+   ```
+
+5. Test the data tools:
+
+   ```text
+   What is my latest available balance? Show the source date.
+   List the transactions from 2026-10-01 to 2026-10-07.
+   What payments and receivables are due in the next 30 days?
+   ```
+
+6. Test Code Interpreter:
+
+   ```text
+   Using the available transactions, calculate total inflow, total outflow,
+   and net cash flow in Python. Explain the inputs you used.
+   ```
+
+7. Test the ML safeguard:
+
+   ```text
+   Try a small cash-flow prediction model using the available history. Tell me
+   whether the data is sufficient and do not present the result as reliable if
+   it is too small.
+   ```
+
+Expected terminal trace:
+
+```text
+[agent] Working...
+[model] I will read the relevant transactions first.
+[tool] get_transactions
+[tool input]
+...
+[tool result] get_transactions in 0.42s
+...
+[tool] run_financial_python
+...
+[agent] Completed.
+```
+
+The live Code Interpreter test currently cannot start while the AWS account's
+Code Interpreter session quota is full. Wait for an active session to expire or
+stop an identified session before testing steps 6 and 7.
