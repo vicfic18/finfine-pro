@@ -8,7 +8,7 @@
 
 Micro, Small, and Medium Enterprises (MSMEs) represent the operational backbone of the Indian economy. While digital payment rails (UPI, IMPS, RuPay) have achieved near-universal penetration, financial intelligence tools have not kept pace. Business owners operate with fragmented visibility:
 
-* Inflow and outflow data resides across physical notebooks, fragmented WhatsApp invoices, supplier receipts, and multi-bank statements.
+* Inflow and outflow data resides across physical notebooks, fragmented images of invoices, supplier receipts, and multi-bank statements.
 * Financial decision-making is reactive, anchored exclusively to current liquid bank balances rather than dynamic, temporal projections of upcoming commitments.
 * Cash shortfalls are discovered abruptly, leading to punitive outcomes: statutory defaults (GST penalties), damaged supplier credit, or expensive emergency financing.
 

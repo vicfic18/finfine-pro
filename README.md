@@ -1,36 +1,186 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinFine Pro
 
-## Getting Started
+Helping Indian MSME's make financial decisions. A scalable agentic application powered by AWS.
 
-First, run the development server:
+## Overview
+
+FinFine Pro is built with **Next.js 16 (App Router)** and **AWS Amplify Gen 2** (code-first TypeScript backend).
+
+---
+
+## Prerequisites
+
+- **Node.js** >= 18.19.0 (Node 20+ or 22 recommended) and **npm**
+- **AWS CLI** installed and configured with appropriate permissions:
+  ```bash
+  aws sts get-caller-identity
+  ```
+- **AWS Amplify CLI tool (`ampx`)**: Installed via `npm` dev dependencies and executed via `npx ampx`.
+
+---
+
+## Local Development Workflow
+
+Amplify Gen 2 provides cloud-based per-developer **Sandbox environments** that provision real, isolated AWS resources for your development session.
+
+### 1. Start the Amplify Cloud Sandbox
+
+To launch your personal cloud sandbox environment with live watch/hot-reloading of backend resources (`amplify/`):
+
+```bash
+npx ampx sandbox
+```
+
+> **Tip:** If running in non-interactive / automated scripts or if you only want to deploy once without keeping the file watcher open, use:
+> ```bash
+> npx ampx sandbox --once
+> ```
+
+When the sandbox starts successfully:
+1. It deploys your personal cloud stack (Cognito, DynamoDB / AppSync data, etc.) to AWS.
+2. It automatically creates or updates the local `amplify_outputs.json` in the project root.
+3. Keep this terminal running while developing backend resources.
+
+### 2. Run the Next.js Frontend
+
+In a separate terminal, start the Next.js development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Backend Structure & Customization
 
-## Learn More
+All backend infrastructure is declared in TypeScript inside the [`amplify/`](file:///home/vicfic/prog/hacks/finfine-pro/amplify) directory:
 
-To learn more about Next.js, take a look at the following resources:
+```
+amplify/
+├── auth/
+│   └── resource.ts    # Amazon Cognito authentication configuration
+├── data/
+│   └── resource.ts    # AppSync GraphQL API & DynamoDB data models
+├── backend.ts         # Main backend definition aggregating all resources
+├── tsconfig.json
+└── package.json
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Modifying the Data Schema
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Edit [`amplify/data/resource.ts`](file:///home/vicfic/prog/hacks/finfine-pro/amplify/data/resource.ts) to define your data models and authorization rules:
 
-## Deploy on Vercel
+```typescript
+import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+const schema = a.schema({
+  Todo: a
+    .model({
+      content: a.string(),
+      isDone: a.boolean(),
+    })
+    .authorization((allow) => [allow.owner()]),
+});
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+export type Schema = ClientSchema<typeof schema>;
+
+export const data = defineData({
+  schema,
+  authorizationModes: {
+    defaultAuthorizationMode: 'userPool',
+  },
+});
+```
+
+Whenever you save changes in `amplify/`, the running `npx ampx sandbox` process will automatically redeploy the backend diff and update `amplify_outputs.json`.
+
+---
+
+## Managing Secrets in Sandbox
+
+Never hardcode credentials or secrets in code or commit them to Git. Store secrets in AWS Systems Manager Parameter Store via `ampx`:
+
+### Set a Secret for Sandbox
+```bash
+npx ampx sandbox secret set <SECRET_NAME>
+```
+
+### List or Remove Sandbox Secrets
+```bash
+npx ampx sandbox secret list
+npx ampx sandbox secret remove <SECRET_NAME>
+```
+
+### Using Secrets in Backend Code
+```typescript
+import { secret } from '@aws-amplify/backend';
+
+const apiKey = secret('MY_API_KEY');
+```
+
+---
+
+## Deleting the Sandbox Environment
+
+When you are done with development or want to clean up your AWS sandbox resources to avoid unnecessary cloud costs:
+
+```bash
+npx ampx sandbox delete
+```
+
+---
+
+## Connecting the Frontend to Amplify
+
+Amplify is configured on the client using the generated `amplify_outputs.json` (which is gitignored).
+
+### Configure in Next.js App Router
+Ensure Amplify is initialized in your root layout or a client configuration component with SSR support enabled:
+
+```typescript
+import { Amplify } from 'aws-amplify';
+import outputs from '@/amplify_outputs.json';
+
+Amplify.configure(outputs, { ssr: true });
+```
+
+### Querying Data
+Generate a type-safe client using the exported `Schema`:
+
+```typescript
+// For Client Components:
+'use client';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '@/amplify/data/resource';
+
+const client = generateClient<Schema>();
+
+const { data: items } = await client.models.Todo.list();
+```
+
+For Server Components, use `@aws-amplify/adapter-nextjs/data`:
+```typescript
+import { generateServerClientUsingCookies } from '@aws-amplify/adapter-nextjs/data';
+import { cookies } from 'next/headers';
+import type { Schema } from '@/amplify/data/resource';
+
+const serverClient = generateServerClientUsingCookies<Schema>({
+  config: outputs,
+  cookies,
+});
+```
+
+---
+
+## Deployment & CI/CD
+
+Production deployments are driven by AWS Amplify Hosting connected to your Git repository:
+
+1. **amplify_outputs.json:** Generated dynamically in the build pipeline (`npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID`), never committed to Git.
+2. **Branch Secrets:** Set branch-level secrets using:
+   ```bash
+   npx ampx secret set <SECRET_NAME> --branch <BRANCH_NAME> --app-id <APP_ID>
+   ```
+3. **Build Specification:** Configure `amplify.yml` with backend build and frontend Next.js `.next` output artifacts.
