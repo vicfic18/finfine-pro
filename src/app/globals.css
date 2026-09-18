@@ -1,6 +1,140 @@
+@import "tailwindcss";
+
+@layer base {
+  @font-face {
+    font-family: 'PP Cirka';
+    src: url('/fonts/PPCirka-Regular.woff') format('woff');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'PP Cirka';
+    src: url('/fonts/PPCirka-Bold.woff') format('woff');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'Gilroy';
+    src: url('/fonts/Gilroy-SemiBold.woff') format('woff');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'Gilroy';
+    src: url('/fonts/Gilroy-Bold.woff') format('woff');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+}
+
+:root {
+  --font-cirka: 'PP Cirka', Georgia, serif;
+  --font-gilroy: 'Gilroy', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
 body {
-  background-color: #ffffff;
-  color: #000000;
-  font-family: system-ui, sans-serif;
-  margin: 20px;
+  background-color: #FFFFFF;
+  color: #111215;
+  font-family: var(--font-gilroy), sans-serif;
+  overflow-x: hidden;
+  margin: 0;
+}
+
+.font-display {
+  font-family: var(--font-cirka), serif;
+}
+
+.font-sans {
+  font-family: var(--font-gilroy), sans-serif;
+}
+
+/* Halftone stipple dot matrix pattern matching reference image */
+.halftone-dots {
+  background-image: radial-gradient(rgba(17, 18, 21, 0.12) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+
+/* Concentric Guilloche Hairline Borders matching reference image */
+.multi-line-border {
+  border: 1px solid #111215;
+  box-shadow: 
+    0 0 0 2px #FFFFFF,
+    0 0 0 3px #111215,
+    0 0 0 5px #FFFFFF,
+    0 0 0 6px #111215;
+}
+
+.triple-line-border {
+  border-top: 1px solid #111215;
+  border-bottom: 1px solid #111215;
+  box-shadow: 
+    0 -2px 0 0 #FFFFFF, 0 -3px 0 0 #111215,
+    0 2px 0 0 #FFFFFF, 0 3px 0 0 #111215;
+}
+
+/* Horizontal Graph Left-to-Right Draw Animation */
+@keyframes drawGraph {
+  0% {
+    stroke-dashoffset: 1600;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInGraphArea {
+  0% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0.14;
+  }
+}
+
+@keyframes floatGentle {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-6px) scale(1.015);
+  }
+}
+
+.animate-draw-graph-blue {
+  stroke-dasharray: 1600;
+  stroke-dashoffset: 1600;
+  animation: drawGraph 3.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-draw-graph-orange {
+  stroke-dasharray: 1600;
+  stroke-dashoffset: 1600;
+  animation: drawGraph 3.5s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+}
+
+.animate-fade-area-blue {
+  animation: fadeInGraphArea 3.5s ease-out forwards;
+}
+
+.animate-fade-area-orange {
+  animation: fadeInGraphArea 3.8s ease-out forwards;
+}
+
+.animate-gateway-float {
+  animation: floatGentle 12s ease-in-out infinite;
 }
