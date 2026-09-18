@@ -7,11 +7,58 @@ specifies that any unauthenticated user can "create", "read", "update",
 and "delete" any "Todo" records.
 =========================================================================*/
 const schema = a.schema({
-  Todo: a
+  DocumentRecord: a
     .model({
-      content: a.string(),
+      tenantId: a.string(),
+      fileName: a.string(),
+      s3Key: a.string().required(),
+      fileType: a.string(),
+      documentType: a.string(), // 'BANK_STATEMENT' | 'INVOICE' | 'RECEIPT' | 'GST_CHALLAN' | 'OTHER'
+      status: a.string().required(), // 'PENDING' | 'PROCESSING' | 'EXTRACTED' | 'FAILED'
+      extractedEntityCount: a.integer(),
+      rawMetadata: a.json(),
+      errorMessage: a.string(),
+      processedAt: a.datetime(),
     })
-    .authorization((allow) => [allow.guest()]),
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  Transaction: a
+    .model({
+      tenantId: a.string(),
+      documentId: a.string(),
+      date: a.string().required(), // YYYY-MM-DD
+      amount: a.float().required(),
+      type: a.string().required(), // 'INFLOW' | 'OUTFLOW'
+      paymentMode: a.string(), // 'UPI' | 'NEFT' | 'IMPS' | 'CARD' | 'CASH' | 'CHEQUE' | 'AUTOPAY' | 'OTHER'
+      counterpartyName: a.string(),
+      counterpartyIdentifier: a.string(), // UPI VPA / Account #
+      category: a.string(), // 'CUSTOMER_RECEIPT' | 'VENDOR_PAYMENT' | 'STATUTORY_TAX' | 'UTILITY' | 'SALARY' | 'OPERATING_EXPENSE' | 'LOAN_EMI' | 'OTHER'
+      statutoryId: a.string(), // GSTIN or PAN
+      priorityWeight: a.float(), // 0.0 - 1.0 (for deterministic solvency engine)
+      balanceAfterTransaction: a.float(),
+      referenceNumber: a.string(), // UTR / UPI Ref ID
+      description: a.string(),
+      status: a.string(), // 'CONFIRMED' | 'PENDING' | 'RECONCILED'
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  Obligation: a
+    .model({
+      tenantId: a.string(),
+      documentId: a.string(),
+      title: a.string().required(),
+      counterpartyName: a.string(),
+      statutoryId: a.string(),
+      amount: a.float().required(),
+      dueDate: a.string(), // YYYY-MM-DD
+      type: a.string().required(), // 'PAYABLE' | 'RECEIVABLE'
+      category: a.string(), // 'GST_PAYMENT' | 'TDS_PAYMENT' | 'VENDOR_BILL' | 'UTILITY_BILL' | 'CUSTOMER_INVOICE' | 'SALARY' | 'OTHER'
+      priorityWeight: a.float(),
+      penaltyRatePerDay: a.float(),
+      isStatutory: a.boolean(),
+      status: a.string(), // 'SCHEDULED' | 'PAID' | 'OVERDUE' | 'DISPUTED'
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

@@ -11,8 +11,17 @@
   "dependencies": {
     "@aws-amplify/adapter-nextjs": "^1.7.3",
     "@aws-amplify/ui-react": "^6.15.6",
+    "@aws-sdk/client-bedrock-runtime": "^3.1135.0",
+    "@aws-sdk/client-dynamodb": "^3.1135.0",
+    "@aws-sdk/client-s3": "^3.1135.0",
+    "@aws-sdk/client-sfn": "^3.1135.0",
+    "@aws-sdk/lib-dynamodb": "^3.1135.0",
+    "@types/aws-lambda": "^8.10.163",
+    "@types/pdf-parse": "^1.1.5",
     "aws-amplify": "^6.20.0",
     "next": "^16.3.5",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
