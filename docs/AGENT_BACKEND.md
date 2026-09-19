@@ -14,6 +14,9 @@ The backend exposes:
 
 - `GET /ping`
 - `POST /invocations` with the stable chat contract documented below
+- `GET /invocations/conversations` for the signed-in user's recent chats
+- `GET /invocations/conversations/{sessionId}` for a safe visible transcript
+- `DELETE /invocations/conversations/{sessionId}` to remove a chat and its session data
 
 The browser calls the same-origin Next.js `/api/chat` route. That route
 validates the request, forwards the Cognito access token, applies a timeout,
@@ -98,7 +101,9 @@ MODEL_ID=nex-agi/nex-n2.5-pro:free
 
 The signed-in AWS identity running FastAPI must be able to read the configured
 DynamoDB tables, invoke `finfine-code-executor`, and read/write the
-`agent-sessions/` prefix in the existing Amplify storage bucket. That prefix is
+`agent-sessions/` prefix in the existing Amplify storage bucket. Conversation
+deletion also requires `s3:DeleteObject`, and snapshot cleanup requires
+`s3:ListBucket` constrained to that prefix. That prefix is
 not present in `amplify/storage/resource.ts`, so Amplify does not grant browser
 identities access to it. The bucket encrypts objects at rest, and the backend
 adds a prefix-scoped lifecycle rule whose default retention is 30 days.
@@ -204,6 +209,18 @@ hash of the authenticated owner, session ID, and agent version. In-process
 locks serialize turns for one session. S3 remains the durable source of truth
 across process restarts; there is no additional cache or DynamoDB session
 table.
+
+The same private prefix contains an application-owned conversation catalog and
+visible transcript JSON. Catalog keys are scoped by a SHA-256 digest of the
+Cognito `sub`. Transcripts contain only completed user prompts and final
+assistant answers; tool calls, tool results, and internal snapshot state are
+never returned by the history API. The first prompt becomes the title without
+another model call. These objects share the 30-day lifecycle used by the
+Strands snapshots.
+
+Catalog writes use an in-process owner lock, matching the current single
+runtime deployment. Move the catalog to a concurrency-safe index such as
+DynamoDB before enabling multiple writable runtime replicas.
 
 ## Lambda Executor
 

@@ -24,6 +24,36 @@ export type ChatErrorResponse = {
   message: string;
 };
 
+export type ConversationSummary = {
+  sessionId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ConversationMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: 'complete';
+  createdAt: string;
+  requestId: string;
+};
+
+export type ConversationListResponse = {
+  status: 'success';
+  conversations: ConversationSummary[];
+};
+
+export type ConversationResponse = {
+  status: 'success';
+  conversation: ConversationSummary & { messages: ConversationMessage[] };
+};
+
+export type ConversationDeleteResponse = {
+  status: 'success';
+};
+
 export function isUuid(value: string): boolean {
   return value.length <= MAX_CHAT_ID_LENGTH && UUID_PATTERN.test(value);
 }
@@ -99,4 +129,56 @@ export function isChatSuccessResponse(value: unknown): value is ChatSuccessRespo
     isUuid(value.sessionId) &&
     typeof value.answer === 'string'
   );
+}
+
+function isIsoDate(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+function isConversationSummary(value: unknown): value is ConversationSummary {
+  return (
+    isRecord(value) &&
+    typeof value.sessionId === 'string' &&
+    isUuid(value.sessionId) &&
+    typeof value.title === 'string' &&
+    value.title.length > 0 &&
+    isIsoDate(value.createdAt) &&
+    isIsoDate(value.updatedAt)
+  );
+}
+
+function isConversationMessage(value: unknown): value is ConversationMessage {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    (value.role === 'user' || value.role === 'assistant') &&
+    typeof value.content === 'string' &&
+    value.status === 'complete' &&
+    isIsoDate(value.createdAt) &&
+    typeof value.requestId === 'string' &&
+    isUuid(value.requestId)
+  );
+}
+
+export function isConversationListResponse(value: unknown): value is ConversationListResponse {
+  return (
+    isRecord(value) &&
+    value.status === 'success' &&
+    Array.isArray(value.conversations) &&
+    value.conversations.every(isConversationSummary)
+  );
+}
+
+export function isConversationResponse(value: unknown): value is ConversationResponse {
+  if (!isRecord(value) || value.status !== 'success' || !isRecord(value.conversation)) return false;
+  const messages = value.conversation.messages;
+  return (
+    isConversationSummary(value.conversation) &&
+    Array.isArray(messages) &&
+    messages.every(isConversationMessage)
+  );
+}
+
+export function isConversationDeleteResponse(value: unknown): value is ConversationDeleteResponse {
+  return isRecord(value) && value.status === 'success';
 }

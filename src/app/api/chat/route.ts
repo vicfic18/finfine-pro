@@ -1,17 +1,20 @@
 import {
+  isConversationListResponse,
   isChatSuccessResponse,
   isRecord,
   parseChatRequest,
   type ChatErrorResponse,
   type ChatSuccessResponse,
 } from '@/lib/chat-contract';
-
-// FastAPI defaults to a 90-second agent timeout. Leave enough time for it to
-// cancel Strands and return a safe response before the proxy closes the link.
-const DEFAULT_TIMEOUT_MS = 100_000;
-const MAX_TIMEOUT_MS = 120_000;
-
-type RuntimeConfigError = Error & { code: 'runtime_unavailable' };
+import {
+  bearerToken,
+  readJson,
+  runtimeEndpoint,
+  runtimeFetch,
+  runtimeTimeoutMs,
+  upstreamErrorStatus,
+  type RuntimeConfigError,
+} from '@/lib/chat-runtime';
 
 function jsonResponse(
   body: ChatSuccessResponse | ChatErrorResponse,
@@ -34,80 +37,9 @@ function errorResponse(
   return jsonResponse({ status: 'error', requestId, code, message }, status);
 }
 
-function runtimeConfigError(message: string): RuntimeConfigError {
-  const error = new Error(message) as RuntimeConfigError;
-  error.code = 'runtime_unavailable';
-  return error;
-}
-
-function runtimeEndpoint(): string {
-  const configuredUrl = process.env.FINFINE_AGENT_RUNTIME_URL?.trim();
-  if (!configuredUrl) {
-    throw runtimeConfigError('FINFINE_AGENT_RUNTIME_URL is not configured.');
-  }
-
-  let endpoint: URL;
-  try {
-    endpoint = new URL(configuredUrl);
-  } catch {
-    throw runtimeConfigError('FINFINE_AGENT_RUNTIME_URL is invalid.');
-  }
-
-  if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') {
-    throw runtimeConfigError('FINFINE_AGENT_RUNTIME_URL must use HTTP or HTTPS.');
-  }
-  if (endpoint.username || endpoint.password) {
-    throw runtimeConfigError('FINFINE_AGENT_RUNTIME_URL must not contain credentials.');
-  }
-
-  // The documented local and AgentCore contract is POST /invocations. An
-  // explicit path is preserved so deployed runtimes can expose a custom route.
-  if (endpoint.pathname === '' || endpoint.pathname === '/') {
-    endpoint.pathname = '/invocations';
-  }
-
-  return endpoint.toString();
-}
-
-function runtimeTimeoutMs(): number {
-  const configuredTimeout = process.env.FINFINE_CHAT_PROXY_TIMEOUT_MS;
-  if (configuredTimeout === undefined || configuredTimeout.trim() === '') {
-    return DEFAULT_TIMEOUT_MS;
-  }
-
-  const timeout = Number(configuredTimeout);
-  if (!Number.isInteger(timeout) || timeout <= 0) {
-    throw runtimeConfigError('FINFINE_CHAT_PROXY_TIMEOUT_MS must be a positive integer.');
-  }
-
-  return Math.min(timeout, MAX_TIMEOUT_MS);
-}
-
 function isJsonContentType(contentType: string | null): boolean {
   if (!contentType) return true;
   return /^(?:application\/json|application\/[^;]+\+json)(?:\s*;|$)/i.test(contentType);
-}
-
-function upstreamErrorStatus(status: number): { status: number; code: string; message: string } {
-  if (status === 401 || status === 403) {
-    return {
-      status,
-      code: status === 401 ? 'unauthorized' : 'forbidden',
-      message: status === 401 ? 'Authentication was rejected.' : 'Access to the agent was denied.',
-    };
-  }
-  if (status === 408 || status === 429) {
-    return {
-      status: 429,
-      code: 'runtime_busy',
-      message: 'The agent is busy. Please try again shortly.',
-    };
-  }
-  return {
-    status: 502,
-    code: 'runtime_error',
-    message: 'The agent could not complete the request.',
-  };
 }
 
 function safeRuntimeError(
@@ -127,14 +59,6 @@ function safeRuntimeError(
   };
 }
 
-async function readJson(response: Response): Promise<unknown> {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
 export async function POST(request: Request): Promise<Response> {
   let body: unknown;
   try {
@@ -152,8 +76,8 @@ export async function POST(request: Request): Promise<Response> {
   }
   const { prompt, requestId, sessionId } = parsed.value;
 
-  const authorization = request.headers.get('authorization');
-  if (!authorization || !/^Bearer\s+\S+(?:\s*)$/i.test(authorization)) {
+  const authorization = bearerToken(request);
+  if (!authorization) {
     return errorResponse(requestId, 401, 'unauthorized', 'A Bearer access token is required.');
   }
 
@@ -232,4 +156,24 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   return jsonResponse(upstreamBody, 200);
+}
+
+export async function GET(request: Request): Promise<Response> {
+  if (!bearerToken(request)) return errorResponse(null, 401, 'unauthorized', 'A Bearer access token is required.');
+  const result = await runtimeFetch(request, 'conversations', 'GET');
+  if (!result.response) {
+    if (result.error === 'config') return errorResponse(null, 503, 'runtime_unavailable', 'The agent runtime is not available.');
+    if (result.error === 'timeout') return errorResponse(null, 504, 'runtime_timeout', 'The agent took too long to respond.');
+    if (result.error === 'aborted') return errorResponse(null, 499, 'request_aborted', 'The request was cancelled.');
+    return errorResponse(null, 502, 'runtime_unreachable', 'The agent could not be reached.');
+  }
+  const upstreamBody = await readJson(result.response);
+  if (!result.response.ok) {
+    const mapped = upstreamErrorStatus(result.response.status);
+    return errorResponse(null, mapped.status, mapped.code, mapped.message);
+  }
+  if (!isConversationListResponse(upstreamBody)) {
+    return errorResponse(null, 502, 'invalid_runtime_response', 'The agent returned an invalid response.');
+  }
+  return Response.json(upstreamBody, { headers: { 'Cache-Control': 'no-store' } });
 }
