@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:proxy": "node --import tsx --test tests/chat-proxy.test.ts"
   },
   "dependencies": {
     "@aws-amplify/adapter-nextjs": "^1.7.3",
@@ -16,18 +17,25 @@
     "@aws-sdk/client-s3": "^3.1135.0",
     "@aws-sdk/client-sfn": "^3.1135.0",
     "@aws-sdk/lib-dynamodb": "^3.1135.0",
+    "@radix-ui/react-avatar": "^1.2.6",
+    "@radix-ui/react-tooltip": "^1.2.16",
     "@types/aws-lambda": "^8.10.163",
     "@types/pdf-parse": "^1.1.5",
     "aws-amplify": "^6.20.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.47.0",
+    "marked": "^18.0.13",
     "next": "^16.3.5",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-markdown": "^10.1.0",
     "recharts": "^3.10.1",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "shiki": "^4.4.3",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {

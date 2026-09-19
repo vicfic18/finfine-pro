@@ -2,7 +2,9 @@ import asyncio
 
 import httpx
 
-from finfine_agent.api import app, get_answerer
+from finfine_agent.api import app, get_current_principal, get_runtime_settings
+from finfine_agent.auth import AuthenticatedPrincipal
+from finfine_agent.config import RuntimeSettings
 
 
 def request(method: str, path: str, **kwargs) -> httpx.Response:
@@ -23,41 +25,59 @@ def test_agentcore_runtime_health() -> None:
     assert response.json() == {"status": "Healthy"}
 
 
-def test_agentcore_runtime_invocation() -> None:
-    async def answerer():
-        return lambda question: f"answer:{question}"
-
-    app.dependency_overrides[get_answerer] = answerer
+def test_agentcore_runtime_invocation_requires_authentication() -> None:
     try:
-        response = request("POST", "/invocations", json={"prompt": "  My balance?  "})
+        app.dependency_overrides[get_runtime_settings] = lambda: RuntimeSettings(
+            cognito_issuer="https://cognito-idp.example.test/pool",
+            cognito_client_id="client",
+            session_bucket="bucket",
+        )
+        response = request(
+            "POST",
+            "/invocations",
+            json={"prompt": "My balance?", "requestId": "00000000-0000-4000-8000-000000000001"},
+        )
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "success", "answer": "answer:My balance?"}
+    assert response.status_code == 401
+    assert set(response.json()) == {"status", "requestId", "code", "message"}
 
 
 def test_query_rejects_blank_question() -> None:
-    response = request("POST", "/invocations", json={"prompt": "   "})
+    app.dependency_overrides[get_runtime_settings] = lambda: RuntimeSettings(
+        cognito_issuer="https://cognito-idp.example.test/pool",
+        cognito_client_id="client",
+        session_bucket="bucket",
+    )
+    app.dependency_overrides[get_current_principal] = lambda: AuthenticatedPrincipal(
+        "subject", {}
+    )
+    try:
+        response = request(
+            "POST",
+            "/invocations",
+            json={"prompt": "   ", "requestId": "00000000-0000-4000-8000-000000000001"},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_REQUEST"
 
 
-def test_query_returns_safe_service_error() -> None:
-    def unavailable(_question: str) -> str:
-        raise RuntimeError("secret internal failure")
-
-    async def answerer():
-        return unavailable
-
-    app.dependency_overrides[get_answerer] = answerer
+def test_query_requires_request_id() -> None:
+    app.dependency_overrides[get_runtime_settings] = lambda: RuntimeSettings(
+        cognito_issuer="https://cognito-idp.example.test/pool",
+        cognito_client_id="client",
+        session_bucket="bucket",
+    )
+    app.dependency_overrides[get_current_principal] = lambda: AuthenticatedPrincipal(
+        "subject", {}
+    )
     try:
         response = request("POST", "/invocations", json={"prompt": "My balance?"})
     finally:
         app.dependency_overrides.clear()
-
-    assert response.status_code == 503
-    assert response.json() == {
-        "status": "error",
-        "error": "The agent could not complete the request. Check the backend terminal for details.",
-    }
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_REQUEST"
