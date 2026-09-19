@@ -1,137 +1,377 @@
-"""HTTP interface for the local FinFine agent."""
+"""Authenticated HTTP interface for the FinFine agent."""
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import inspect
 import logging
-import os
-from collections.abc import Callable
+from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Literal
+from threading import Event
+from typing import Annotated, Any, Awaitable, Callable, Literal
+from uuid import UUID, uuid4
 
+import boto3
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from strands.session import SnapshotSessionManager
+from strands.storage import S3Storage
 
-from finfine_agent.agent import ask, create_agent
-from finfine_agent.config import AgentSettings
+from finfine_agent.agent import AgentCancelledError, ask_async, create_agent
+from finfine_agent.auth import AuthenticatedPrincipal, AuthenticationError, CognitoAccessTokenValidator
+from finfine_agent.config import AgentSettings, RuntimeSettings
+from finfine_agent.sessions import (
+    CompletedResult,
+    Conversation,
+    ConversationNotFoundError,
+    ConversationSummary,
+    RequestConflictError,
+    S3SessionRegistry,
+    SessionLockPool,
+    SessionRecord,
+    SessionUnavailableError,
+    VisibleMessage,
+)
 
 logger = logging.getLogger(__name__)
 Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000)]
-Answerer = Callable[[str], str]
+Answerer = Callable[..., str | Awaitable[str]]
 
 
 class RuntimeInvocation(BaseModel):
-    """Question accepted locally and by AgentCore Runtime."""
-
+    model_config = ConfigDict(populate_by_name=True)
     prompt: Question
+    request_id: UUID = Field(alias="requestId")
+    session_id: UUID | None = Field(default=None, alias="sessionId")
 
 
 class AgentAnswer(BaseModel):
-    """Successful agent response."""
-
+    model_config = ConfigDict(populate_by_name=True)
     status: Literal["success"] = "success"
+    request_id: UUID = Field(alias="requestId")
+    session_id: UUID = Field(alias="sessionId")
     answer: str
 
 
 class AgentError(BaseModel):
-    """Safe error response for API callers."""
-
+    model_config = ConfigDict(populate_by_name=True)
     status: Literal["error"] = "error"
-    error: str
+    request_id: UUID = Field(alias="requestId")
+    code: str
+    message: str
 
 
 class RuntimeHealthResponse(BaseModel):
-    """AgentCore Runtime health response."""
-
     status: Literal["Healthy"] = "Healthy"
 
 
-def run_agent_question(question: str) -> str:
-    """Run one isolated agent request."""
-    settings = AgentSettings.from_environment()
-    agent = create_agent(settings, trace=True)
-    return ask(agent, question)
+class VisibleMessageResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    status: Literal["complete"] = "complete"
+    created_at: datetime = Field(alias="createdAt")
+    request_id: UUID = Field(alias="requestId")
 
 
-async def get_answerer() -> Answerer:
-    """Provide the agent runner; replaceable in API tests."""
-    return run_agent_question
+class ConversationSummaryResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    session_id: UUID = Field(alias="sessionId")
+    title: str
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
 
 
-def _public_error(exc: Exception) -> str:
-    """Return a useful message without exposing credentials or internals."""
-    error_text = str(exc)
-    if "ResourceNotFoundException" in error_text:
-        return "The Lambda code executor is not deployed or its name is incorrect."
-    if "CreateOAuth2Token" in error_text:
-        return "AWS login has expired. Sign in to AWS again, then retry."
-    if "Connection error" in error_text or "ConnectError" in error_text:
-        return "The model service could not be reached. Check the backend network connection."
-    return "The agent could not complete the request. Check the backend terminal for details."
+class ConversationDetailResponse(ConversationSummaryResponse):
+    messages: list[VisibleMessageResponse]
+
+
+class ConversationListResponse(BaseModel):
+    status: Literal["success"] = "success"
+    conversations: list[ConversationSummaryResponse]
+
+
+class ConversationResponse(BaseModel):
+    status: Literal["success"] = "success"
+    conversation: ConversationDetailResponse
+
+
+class ConversationDeleteResponse(BaseModel):
+    status: Literal["success"] = "success"
+
+
+class RuntimeService:
+    """Coordinate auth-scoped sessions, idempotency, and agent execution."""
+
+    def __init__(self, settings: RuntimeSettings, *, registry: S3SessionRegistry | None = None, lock_pool: SessionLockPool | None = None) -> None:
+        self.settings = settings
+        self.registry = registry or S3SessionRegistry(settings)
+        self.lock_pool = lock_pool or SessionLockPool()
+
+    async def invoke(self, request: RuntimeInvocation, principal: AuthenticatedPrincipal, answerer: Answerer, http_request: Request | None = None) -> AgentAnswer:
+        record = self.registry.resolve(subject=principal.subject, public_id=request.session_id)
+        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
+        request_id = str(request.request_id)
+        existing = self.registry.get_completed(request_id=request_id, subject=principal.subject, session_id=record.public_id, prompt_hash=prompt_hash)
+        if existing is not None:
+            await self._record_turn(principal.subject, record, request_id, request.prompt, existing.answer)
+            return AgentAnswer(requestId=request.request_id, sessionId=UUID(existing.session_id), answer=existing.answer)
+        async with self.lock_pool.get(record.storage_id):
+            existing = self.registry.get_completed(request_id=request_id, subject=principal.subject, session_id=record.public_id, prompt_hash=prompt_hash)
+            if existing is not None:
+                await self._record_turn(principal.subject, record, request_id, request.prompt, existing.answer)
+                return AgentAnswer(requestId=request.request_id, sessionId=UUID(existing.session_id), answer=existing.answer)
+            answer = await self._call_answerer(answerer, request.prompt, record=record, request_id=request_id, http_request=http_request)
+            completed = self.registry.put_completed(CompletedResult(request_id, record.public_id, prompt_hash, answer), subject=principal.subject)
+            self.registry.touch(record)
+            await self._record_turn(principal.subject, record, request_id, request.prompt, completed.answer)
+            return AgentAnswer(requestId=request.request_id, sessionId=UUID(completed.session_id), answer=completed.answer)
+
+    async def list_conversations(self, principal: AuthenticatedPrincipal) -> list[ConversationSummary]:
+        owner = self.registry.owner_digest(principal.subject)
+        async with self.lock_pool.get(f"owner:{owner}"):
+            return self.registry.list_conversations(subject=principal.subject)
+
+    async def get_conversation(self, principal: AuthenticatedPrincipal, session_id: UUID) -> Conversation:
+        owner = self.registry.owner_digest(principal.subject)
+        async with self.lock_pool.get(f"owner:{owner}"):
+            return self.registry.get_conversation(subject=principal.subject, session_id=session_id)
+
+    async def delete_conversation(self, principal: AuthenticatedPrincipal, session_id: UUID) -> None:
+        owner = self.registry.owner_digest(principal.subject)
+        async with self.lock_pool.get(f"owner:{owner}"):
+            self.registry.delete_conversation(subject=principal.subject, session_id=session_id)
+
+    async def _record_turn(self, subject: str, record: SessionRecord, request_id: str, prompt: str, answer: str) -> None:
+        owner = self.registry.owner_digest(subject)
+        async with self.lock_pool.get(f"owner:{owner}"):
+            self.registry.record_completed_turn(
+                subject=subject,
+                record=record,
+                request_id=request_id,
+                prompt=prompt,
+                answer=answer,
+            )
+
+    async def _call_answerer(self, answerer: Answerer, question: str, *, record: SessionRecord, request_id: str, http_request: Request | None) -> str:
+        kwargs: dict[str, Any] = {}
+        try:
+            parameters = inspect.signature(answerer).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "session_record" in parameters:
+            kwargs["session_record"] = record
+        if "request_id" in parameters:
+            kwargs["request_id"] = request_id
+        if "runtime_settings" in parameters:
+            kwargs["runtime_settings"] = self.settings
+        if "http_request" in parameters:
+            kwargs["http_request"] = http_request
+        result = answerer(question, **kwargs)
+        if inspect.isawaitable(result):
+            return str(await result)
+        return str(result)
+
+
+@lru_cache(maxsize=4)
+def get_runtime_service(settings: RuntimeSettings) -> RuntimeService:
+    """Reuse one S3 client and bounded lock pool per runtime configuration."""
+    return RuntimeService(settings)
+
+
+async def run_agent_question(question: str, *, session_record: SessionRecord, request_id: str, runtime_settings: RuntimeSettings, http_request: Request | None = None) -> str:
+    """Build a fresh agent for this request and persist through Strands S3 storage."""
+    agent_settings = AgentSettings.from_environment()
+    boto_session = boto3.Session(profile_name=runtime_settings.aws_profile, region_name=runtime_settings.session_region)
+    # The Strands S3Storage API accepts either a region override or a
+    # pre-configured boto session, not both. The session carries both the
+    # configured AWS profile and the session region, so use it as the single
+    # source of connection configuration.
+    storage = S3Storage(
+        runtime_settings.session_bucket,
+        prefix=runtime_settings.session_prefix,
+        boto_session=boto_session,
+    )
+    manager = SnapshotSessionManager(session_record.storage_id, storage=storage)
+    agent = create_agent(agent_settings, session_manager=manager, trace=False)
+    cancel_signal = Event()
+    disconnect_task: asyncio.Task[None] | None = None
+    if http_request is not None:
+        disconnect_task = asyncio.create_task(_watch_disconnect(http_request, cancel_signal, agent))
+    try:
+        return await ask_async(agent, question, request_id=request_id, timeout_seconds=runtime_settings.request_timeout_seconds, cancel_signal=cancel_signal)
+    finally:
+        if disconnect_task is not None:
+            disconnect_task.cancel()
+        cleanup = getattr(agent, "cleanup", None)
+        if cleanup is not None:
+            cleanup()
+
+
+async def _watch_disconnect(request: Request, signal: Event, agent: Any) -> None:
+    while not signal.is_set():
+        if await request.is_disconnected():
+            signal.set()
+            cancel = getattr(agent, "cancel", None)
+            if cancel is not None:
+                cancel()
+            return
+        await asyncio.sleep(0.25)
+
+
+def _error_response(*, code: str, message: str, status_code: int, request_id: UUID | None = None) -> JSONResponse:
+    body = AgentError(requestId=request_id or uuid4(), code=code, message=message)
+    return JSONResponse(status_code=status_code, content=body.model_dump(by_alias=True, mode="json"))
+
+
+def _public_error(exc: Exception) -> tuple[str, str, int]:
+    if isinstance(exc, AuthenticationError):
+        return "AUTHENTICATION_REQUIRED", "Authentication is required.", 401
+    if isinstance(exc, SessionUnavailableError):
+        return "SESSION_UNAVAILABLE", "The requested session is unavailable.", 409
+    if isinstance(exc, ConversationNotFoundError):
+        return "CONVERSATION_NOT_FOUND", "The requested conversation was not found.", 404
+    if isinstance(exc, RequestConflictError):
+        return "REQUEST_ID_CONFLICT", "The request ID was already used for a different request.", 409
+    if isinstance(exc, TimeoutError):
+        return "REQUEST_TIMEOUT", "The agent took too long to complete the request.", 504
+    if isinstance(exc, AgentCancelledError):
+        return "REQUEST_CANCELLED", "The request was cancelled before completion.", 499
+    if "ResourceNotFoundException" in str(exc):
+        return "AGENT_DEPENDENCY_UNAVAILABLE", "The agent dependency is unavailable.", 503
+    logger.exception("Agent API request failed")
+    return "AGENT_UNAVAILABLE", "The agent could not complete the request.", 503
 
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
-allowed_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "FINFINE_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000,"
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+app = FastAPI(title="FinFine Agent API", version="0.1.0", description="Authenticated HTTP interface for the FinFine financial agent.", docs_url=None, redoc_url=None, openapi_url=None)
 
-app = FastAPI(
-    title="FinFine Agent API",
-    version="0.1.0",
-    description="Local HTTP interface for asking the FinFine financial agent questions.",
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if "*" in allowed_origins else allowed_origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def get_runtime_settings() -> RuntimeSettings:
+    return RuntimeSettings.from_environment()
+
+
+@lru_cache(maxsize=4)
+def _cached_token_validator(
+    issuer: str,
+    client_id: str,
+) -> CognitoAccessTokenValidator:
+    """Reuse PyJWT's bounded JWKS cache across requests."""
+    return CognitoAccessTokenValidator(issuer=issuer, client_id=client_id)
+
+
+def get_token_validator(settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)]) -> CognitoAccessTokenValidator:
+    return _cached_token_validator(settings.cognito_issuer, settings.cognito_client_id)
+
+
+async def get_current_principal(request: Request, validator: Annotated[CognitoAccessTokenValidator, Depends(get_token_validator)]) -> AuthenticatedPrincipal:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise AuthenticationError("authentication is required")
+    return validator.validate(token.strip())
+
+
+async def get_answerer() -> Answerer:
+    return run_agent_question
+
+
+@app.exception_handler(AuthenticationError)
+async def authentication_error_handler(_request: Request, _exc: AuthenticationError) -> JSONResponse:
+    return _error_response(code="AUTHENTICATION_REQUIRED", message="Authentication is required.", status_code=401)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, _exc: RequestValidationError) -> JSONResponse:
+    return _error_response(code="INVALID_REQUEST", message="The request is invalid.", status_code=422)
 
 
 @app.get("/ping", response_model=RuntimeHealthResponse)
 async def runtime_health() -> RuntimeHealthResponse:
-    """Confirm readiness using the AgentCore Runtime HTTP contract."""
     return RuntimeHealthResponse()
 
 
-def _answer_or_error(question: str, answerer: Answerer) -> AgentAnswer | JSONResponse:
-    """Run a question and convert failures into a safe API response."""
+@app.post("/invocations", response_model=AgentAnswer)
+async def invoke_runtime(request: RuntimeInvocation, principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)], answerer: Annotated[Answerer, Depends(get_answerer)], runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)], http_request: Request) -> AgentAnswer | JSONResponse:
     try:
-        return AgentAnswer(answer=answerer(question))
+        return await get_runtime_service(runtime_settings).invoke(request, principal, answerer, http_request)
     except Exception as exc:
-        logger.exception("Agent API request failed")
-        error = AgentError(error=_public_error(exc))
-        return JSONResponse(status_code=503, content=error.model_dump())
+        code, message, status_code = _public_error(exc)
+        return _error_response(code=code, message=message, status_code=status_code, request_id=request.request_id)
 
 
-@app.post(
-    "/invocations",
-    response_model=AgentAnswer,
-    responses={503: {"model": AgentError}},
-)
-async def invoke_runtime(
-    request: RuntimeInvocation,
-    answerer: Annotated[Answerer, Depends(get_answerer)],
-) -> AgentAnswer | JSONResponse:
-    """Handle the shared local and AgentCore Runtime invocation contract."""
-    return _answer_or_error(request.prompt, answerer)
+def _summary_response(summary: ConversationSummary) -> ConversationSummaryResponse:
+    return ConversationSummaryResponse(
+        sessionId=UUID(summary.session_id),
+        title=summary.title,
+        createdAt=summary.created_at,
+        updatedAt=summary.updated_at,
+    )
+
+
+def _message_response(message: VisibleMessage) -> VisibleMessageResponse:
+    return VisibleMessageResponse(
+        id=message.id,
+        role=message.role,
+        content=message.content,
+        createdAt=message.created_at,
+        requestId=UUID(message.request_id),
+    )
+
+
+@app.get("/invocations/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)],
+) -> ConversationListResponse | JSONResponse:
+    try:
+        summaries = await get_runtime_service(runtime_settings).list_conversations(principal)
+        return ConversationListResponse(conversations=[_summary_response(item) for item in summaries])
+    except Exception as exc:
+        code, message, status_code = _public_error(exc)
+        return _error_response(code=code, message=message, status_code=status_code)
+
+
+@app.get("/invocations/conversations/{session_id}", response_model=ConversationResponse)
+async def get_conversation(
+    session_id: UUID,
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)],
+) -> ConversationResponse | JSONResponse:
+    try:
+        conversation = await get_runtime_service(runtime_settings).get_conversation(principal, session_id)
+        summary = _summary_response(conversation.summary)
+        return ConversationResponse(
+            conversation=ConversationDetailResponse(
+                **summary.model_dump(by_alias=True),
+                messages=[_message_response(item) for item in conversation.messages],
+            )
+        )
+    except Exception as exc:
+        code, message, status_code = _public_error(exc)
+        return _error_response(code=code, message=message, status_code=status_code)
+
+
+@app.delete("/invocations/conversations/{session_id}", response_model=ConversationDeleteResponse)
+async def delete_conversation(
+    session_id: UUID,
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)],
+) -> ConversationDeleteResponse | JSONResponse:
+    try:
+        await get_runtime_service(runtime_settings).delete_conversation(principal, session_id)
+        return ConversationDeleteResponse()
+    except Exception as exc:
+        code, message, status_code = _public_error(exc)
+        return _error_response(code=code, message=message, status_code=status_code)
 
 
 def main() -> None:
-    """Run the HTTP service with the AgentCore Runtime port contract."""
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
 

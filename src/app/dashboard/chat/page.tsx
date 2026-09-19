@@ -1,251 +1,356 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Bot, Send, User, AlertCircle, RefreshCw, CheckCircle2 } from 'lucide-react';
-import { askAgent, pingAgent, getAgentApiUrl } from '@/lib/agent-client';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import { ArrowUp, MessageSquare, PanelLeft, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChatMessage, type ChatMessageData } from '@/components/prompt-kit/message';
+import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
+import { ThinkingBar } from '@/components/prompt-kit/thinking-bar';
+import { isUuid, type ConversationListResponse, type ConversationResponse, type ConversationSummary } from '@/lib/chat-contract';
 
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
+const MAX_MESSAGES = 100;
+const MAX_PROMPT_LENGTH = 4_000;
+
+const STARTER_PROMPTS = [
+  'Will I have enough money to pay staff on the 10th?',
+  'What happens if I delay Sharma Textiles by 5 days?',
+  'How much GST do I owe on October 20th?',
+  'Draft a WhatsApp message to collect from Royal Traders',
+];
+
+type ChatResponse = {
+  status?: string;
+  requestId?: string;
+  sessionId?: string | null;
+  answer?: string;
+  code?: string;
+  message?: string;
+};
+
+async function authenticatedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const authSession = await fetchAuthSession();
+  const accessToken = authSession.tokens?.accessToken?.toString();
+  return fetch(input, {
+    ...init,
+    cache: 'no-store',
+    headers: { ...init.headers, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+  });
+}
+
+function randomUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function errorMessageFor(response: ChatResponse, fallback: string) {
+  if (response.code === 'SESSION_UNAVAILABLE' || response.code === 'conversation_not_found') return 'This conversation is no longer available.';
+  return response.message || fallback;
+}
+
+function formatUpdatedAt(value: string): string {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) {
+    return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
+  }
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+}
+
+function HistoryList({ conversations, selectedId, deletingId, loading, onOpen, onDelete, onNew, onClose }: {
+  conversations: ConversationSummary[];
+  selectedId: string | null;
+  deletingId: string | null;
+  loading: boolean;
+  onOpen: (sessionId: string) => void;
+  onDelete: (conversation: ConversationSummary) => void;
+  onNew: () => void;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-neutral-50">
+      <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-3">
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-neutral-500">Chats</span>
+        {onClose && (
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900" aria-label="Close chat history"><X size={17} /></button>
+        )}
+      </div>
+      <div className="p-3">
+        <button type="button" onClick={onNew} className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-neutral-700"><Plus size={15} /> New chat</button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 custom-scrollbar">
+        {loading ? (
+          <p className="px-2 py-4 text-xs text-neutral-400">Loading conversations…</p>
+        ) : conversations.length === 0 ? (
+          <p className="px-2 py-4 text-xs leading-5 text-neutral-400">Your completed conversations will appear here.</p>
+        ) : conversations.map((conversation) => {
+          const selected = conversation.sessionId === selectedId;
+          return (
+            <div key={conversation.sessionId} className={`group mb-1 flex items-center rounded-xl ${selected ? 'bg-white shadow-sm ring-1 ring-neutral-200' : 'hover:bg-white'}`}>
+              <button type="button" onClick={() => onOpen(conversation.sessionId)} className="min-w-0 flex-1 px-3 py-2.5 text-left" aria-current={selected ? 'page' : undefined}>
+                <span className="block truncate text-xs font-semibold text-neutral-800">{conversation.title}</span>
+                <span className="mt-0.5 block text-[10px] text-neutral-400">{formatUpdatedAt(conversation.updatedAt)}</span>
+              </button>
+              <button type="button" onClick={() => onDelete(conversation)} disabled={deletingId === conversation.sessionId} className="mr-1 rounded-lg p-2 text-neutral-300 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 focus:opacity-100 disabled:opacity-40" aria-label={`Delete ${conversation.title}`}><Trash2 size={14} /></button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ChatboxContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawConversationId = searchParams.get('conversation');
+  const selectedConversationId = rawConversationId && isUuid(rawConversationId) ? rawConversationId : null;
+  const [messages, setMessages] = useState<ChatMessageData[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [draft, setDraft] = useState('');
+  const [sessionId, setSessionId] = useState<string | null>(selectedConversationId);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [isConversationLoading, setIsConversationLoading] = useState(Boolean(selectedConversationId));
+  const [sessionUnavailable, setSessionUnavailable] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const hasConversation = messages.length > 0;
+  const showStarters = !hasConversation && !isConversationLoading;
+  const latestAssistant = useMemo(() => [...messages].reverse().find((message) => message.role === 'assistant'), [messages]);
+
+  const refreshHistory = useCallback(async (signal?: AbortSignal) => {
+    const response = await authenticatedFetch('/api/chat', { method: 'GET', signal });
+    const payload = await response.json().catch(() => ({})) as ConversationListResponse & ChatResponse;
+    if (!response.ok || payload.status !== 'success' || !Array.isArray(payload.conversations)) throw new Error(errorMessageFor(payload, 'Could not load conversation history.'));
+    setConversations(payload.conversations);
+  }, []);
+
+  useEffect(() => {
+    if (rawConversationId && !selectedConversationId) {
+      router.replace('/dashboard/chat', { scroll: false });
+      return;
+    }
+    const controller = new AbortController();
+
+    (async () => {
+      await Promise.resolve();
+      if (controller.signal.aborted) return;
+      setLoadError(null);
+      setSessionUnavailable(false);
+      setIsHistoryLoading(true);
+      setIsConversationLoading(Boolean(selectedConversationId));
+      setMessages([]);
+      setSessionId(selectedConversationId);
+      try {
+        await refreshHistory(controller.signal);
+        if (selectedConversationId) {
+          const response = await authenticatedFetch(`/api/chat/${encodeURIComponent(selectedConversationId)}`, { method: 'GET', signal: controller.signal });
+          const payload = await response.json().catch(() => ({})) as ConversationResponse & ChatResponse;
+          if (!response.ok || payload.status !== 'success' || !payload.conversation) {
+            if (response.status === 404 || response.status === 409) setSessionUnavailable(true);
+            throw new Error(errorMessageFor(payload, 'Could not load this conversation.'));
+          }
+          setSessionId(payload.conversation.sessionId);
+          setMessages(payload.conversation.messages.slice(-MAX_MESSAGES).map((message) => ({ id: message.id, role: message.role, content: message.content, status: 'complete', createdAt: Date.parse(message.createdAt), requestId: message.requestId })));
+        } else {
+          setSessionId(null);
+          setMessages([]);
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setLoadError(error instanceof Error ? error.message : 'Could not load conversations.');
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsHistoryLoading(false);
+          setIsConversationLoading(false);
+          setIsHydrated(true);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [rawConversationId, refreshHistory, router, selectedConversationId]);
+
+  const updateMessage = useCallback((messageId: string, update: Partial<ChatMessageData>) => {
+    setMessages((current) => current.map((message) => message.id === messageId ? { ...message, ...update } : message));
+  }, []);
+
+  const runRequest = useCallback(async (prompt: string, requestId: string, assistantId: string, requestSessionId: string | null) => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    activeRequestIdRef.current = requestId;
+    setIsPending(true);
+    try {
+      const response = await authenticatedFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, requestId, ...(requestSessionId ? { sessionId: requestSessionId } : {}) }), signal: controller.signal });
+      const payload = await response.json().catch(() => ({})) as ChatResponse;
+      if (activeRequestIdRef.current !== requestId) return;
+      if (!response.ok || payload.status === 'error') {
+        if (payload.code === 'SESSION_UNAVAILABLE') {
+          setSessionId(null);
+          setSessionUnavailable(true);
+        }
+        throw new Error(errorMessageFor(payload, 'FinFine could not complete that request.'));
+      }
+      if (!payload.answer || !payload.sessionId) throw new Error('FinFine returned an invalid response.');
+      updateMessage(assistantId, { content: payload.answer, status: 'complete' });
+      setSessionId(payload.sessionId);
+      setSessionUnavailable(false);
+      if (!requestSessionId) router.replace(`/dashboard/chat?conversation=${encodeURIComponent(payload.sessionId)}`, { scroll: false });
+      await refreshHistory().catch(() => undefined);
+    } catch (error) {
+      if (activeRequestIdRef.current !== requestId) return;
+      if (error instanceof DOMException && error.name === 'AbortError') updateMessage(assistantId, { content: 'Request cancelled.', status: 'cancelled' });
+      else updateMessage(assistantId, { content: error instanceof Error ? error.message : 'FinFine could not complete that request.', status: 'failed' });
+    } finally {
+      if (activeRequestIdRef.current === requestId) {
+        activeRequestIdRef.current = null;
+        abortControllerRef.current = null;
+        setIsPending(false);
+      }
+    }
+  }, [refreshHistory, router, updateMessage]);
+
+  const sendMessage = useCallback(async (rawPrompt: string) => {
+    const prompt = rawPrompt.trim().slice(0, MAX_PROMPT_LENGTH);
+    if (!prompt || isPending || !isHydrated) return;
+    setDraft('');
+    setSessionUnavailable(false);
+    const requestId = randomUuid();
+    const assistantId = randomUuid();
+    setMessages((current) => [...current.slice(-(MAX_MESSAGES - 2)), { id: randomUuid(), role: 'user', content: prompt, status: 'complete', createdAt: Date.now(), requestId }, { id: assistantId, role: 'assistant', content: '', status: 'pending', createdAt: Date.now(), requestId }]);
+    await runRequest(prompt, requestId, assistantId, sessionId);
+  }, [isHydrated, isPending, runRequest, sessionId]);
+
+  const retryMessage = useCallback((failedMessage: ChatMessageData) => {
+    if (isPending) return;
+    const failedIndex = messages.findIndex((message) => message.id === failedMessage.id);
+    const source = failedIndex >= 0 ? [...messages.slice(0, failedIndex)].reverse().find((message) => message.role === 'user') : undefined;
+    if (!source) return;
+    const requestId = failedMessage.requestId ?? randomUuid();
+    updateMessage(failedMessage.id, { requestId, status: 'pending', content: '' });
+    setSessionUnavailable(false);
+    void runRequest(source.content, requestId, failedMessage.id, sessionId);
+  }, [isPending, messages, runRequest, sessionId, updateMessage]);
+
+  const stopRequest = useCallback(() => {
+    const activeRequestId = activeRequestIdRef.current;
+    if (!activeRequestId) return;
+    activeRequestIdRef.current = null;
+    abortControllerRef.current?.abort();
+    setIsPending(false);
+    setMessages((current) => current.map((message) => message.requestId === activeRequestId && message.role === 'assistant' ? { ...message, content: 'Request cancelled.', status: 'cancelled' } : message));
+  }, []);
+
+  const startNewChat = useCallback(() => {
+    stopRequest();
+    setMessages([]);
+    setSessionId(null);
+    setSessionUnavailable(false);
+    setLoadError(null);
+    setDraft('');
+    setHistoryOpen(false);
+    router.push('/dashboard/chat', { scroll: false });
+  }, [router, stopRequest]);
+
+  const openConversation = useCallback((nextSessionId: string) => {
+    stopRequest();
+    setHistoryOpen(false);
+    router.push(`/dashboard/chat?conversation=${encodeURIComponent(nextSessionId)}`, { scroll: false });
+  }, [router, stopRequest]);
+
+  const deleteConversation = useCallback(async (conversation: ConversationSummary) => {
+    if (!window.confirm(`Delete “${conversation.title}”? This cannot be undone.`)) return;
+    setDeletingId(conversation.sessionId);
+    try {
+      const response = await authenticatedFetch(`/api/chat/${encodeURIComponent(conversation.sessionId)}`, { method: 'DELETE' });
+      const payload = await response.json().catch(() => ({})) as ChatResponse;
+      if (!response.ok || payload.status !== 'success') throw new Error(errorMessageFor(payload, 'Could not delete this conversation.'));
+      setConversations((current) => current.filter((item) => item.sessionId !== conversation.sessionId));
+      if (conversation.sessionId === sessionId) {
+        setMessages([]);
+        setSessionId(null);
+        setDraft('');
+        router.replace('/dashboard/chat', { scroll: false });
+      }
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'Could not delete this conversation.');
+    } finally {
+      setDeletingId(null);
+    }
+  }, [router, sessionId]);
+
+  const historyProps = { conversations, selectedId: sessionId, deletingId, loading: isHistoryLoading, onOpen: openConversation, onDelete: deleteConversation, onNew: startNewChat };
+
+  return (
+    <div className="relative mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-7xl overflow-hidden border border-neutral-200 bg-white font-sans sm:min-h-[calc(100vh-5rem)] sm:rounded-2xl">
+      <aside className="hidden w-64 shrink-0 border-r border-neutral-200 sm:block"><HistoryList {...historyProps} /></aside>
+      {historyOpen && (
+        <div className="fixed inset-0 z-[60] flex bg-black/25 sm:hidden" role="dialog" aria-modal="true" aria-label="Chat history">
+          <aside className="h-full w-[min(86vw,20rem)] border-r border-neutral-200 shadow-2xl"><HistoryList {...historyProps} onClose={() => setHistoryOpen(false)} /></aside>
+          <button type="button" className="flex-1" onClick={() => setHistoryOpen(false)} aria-label="Close chat history" />
+        </div>
+      )}
+      <section className="flex min-w-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">
+        <header className="flex items-center justify-between gap-3 border-b border-neutral-200 pb-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-neutral-200 p-2 text-neutral-600 sm:hidden" aria-label="Open chat history"><PanelLeft size={17} /></button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate font-display text-xl font-bold tracking-tight text-neutral-900 sm:text-2xl">FinFine Financial Assistant</h1>
+                <span className="hidden rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 md:inline">Online</span>
+              </div>
+              <p className="mt-0.5 hidden text-xs text-neutral-500 md:block">Ask about your cash, taxes, invoices, or vendor obligations.</p>
+            </div>
+          </div>
+          <button type="button" onClick={startNewChat} disabled={!hasConversation && !sessionId} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-600 transition hover:border-neutral-400 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Start a new chat"><Plus size={14} /> <span className="hidden sm:inline">New chat</span></button>
+        </header>
+        <div className="flex flex-1 flex-col py-5">
+          {loadError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-xs text-red-800" role="alert">{loadError}</div>}
+          {isConversationLoading ? (
+            <div className="flex flex-1 items-center justify-center text-xs text-neutral-400">Loading conversation…</div>
+          ) : showStarters ? (
+            <div className="flex flex-1 flex-col items-center justify-center px-2 py-8 text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 text-neutral-700 shadow-sm"><MessageSquare size={26} strokeWidth={1.7} /></div>
+              <h2 className="font-display text-xl font-bold text-neutral-900">How can I help your business today?</h2>
+              <p className="mt-2 max-w-lg text-xs leading-relaxed text-neutral-500">FinFine can use your verified financial records to answer practical questions. Ask in English, Hindi, or Hinglish.</p>
+              <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-2.5 text-left sm:grid-cols-2">
+                {STARTER_PROMPTS.map((prompt) => (
+                  <button key={prompt} type="button" onClick={() => void sendMessage(prompt)} disabled={!isHydrated || isPending} className="group flex items-center justify-between rounded-xl border border-neutral-200/80 bg-white p-3 text-xs font-medium text-neutral-700 transition hover:border-neutral-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"><span>{prompt}</span><Sparkles size={13} className="ml-2 shrink-0 text-neutral-400 transition group-hover:text-amber-500" /></button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">{messages.map((message) => <ChatMessage key={message.id} message={message} onRetry={retryMessage} />)}</div>
+          )}
+          <div className="mt-auto pt-6">
+            {sessionUnavailable && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900" role="alert"><span>This conversation is no longer available.</span><button type="button" onClick={startNewChat} className="shrink-0 font-semibold underline underline-offset-2">Start a new chat</button></div>
+            )}
+            {isPending && <ThinkingBar onStop={stopRequest} />}
+            <PromptInput value={draft} onValueChange={setDraft} onSubmit={() => void sendMessage(draft)} disabled={!isHydrated || isPending || isConversationLoading}>
+              <PromptInputTextarea placeholder="Ask about your cash, taxes, invoices, or obligations…" maxLength={MAX_PROMPT_LENGTH} />
+              <PromptInputActions className="justify-end">
+                <PromptInputAction tooltip="Send message"><button type="button" onClick={() => void sendMessage(draft)} disabled={!isHydrated || isPending || !draft.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400" aria-label="Send message"><ArrowUp size={17} strokeWidth={2.2} /></button></PromptInputAction>
+              </PromptInputActions>
+            </PromptInput>
+            {latestAssistant?.status === 'complete' && <p className="mt-2 text-center text-[10px] text-neutral-400">FinFine answers are based on the records available to your workspace.</p>}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export default function ChatboxPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isOnline, setIsOnline] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Check agent availability on load
-  useEffect(() => {
-    let mounted = true;
-    pingAgent().then((healthy) => {
-      if (mounted) setIsOnline(healthy);
-    });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // Auto-scroll to latest message
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
-
-  const handleSend = async (textToSend?: string) => {
-    const prompt = (textToSend || input).trim();
-    if (!prompt || loading) return;
-
-    setInput('');
-    setError(null);
-
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: prompt,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setLoading(true);
-
-    try {
-      const answer = await askAgent(prompt);
-      const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: answer,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setIsOnline(true);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to get response from financial assistant.';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const starterPrompts = [
-    'What is my latest available bank balance and source date?',
-    'Will I have enough money to pay staff on the 10th?',
-    'Export all available transactions to CSV and calculate net cash flow with pandas.',
-    'Which supplier bills or obligations are due in the next 14 days?',
-  ];
-
-  return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] sm:h-[calc(100vh-5rem)] max-w-5xl mx-auto w-full font-sans justify-between">
-      
-      {/* Header */}
-      <header className="flex items-center justify-between pb-4 border-b border-neutral-200 shrink-0">
-        <div>
-          <div className="flex items-center space-x-2.5">
-            <h1 className="font-display font-bold text-2xl text-neutral-900 tracking-tight">
-              Financial Assistant
-            </h1>
-            {isOnline === null ? (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-neutral-100 text-neutral-600 font-semibold flex items-center space-x-1">
-                <RefreshCw size={10} className="animate-spin" />
-                <span>Checking service...</span>
-              </span>
-            ) : isOnline ? (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold flex items-center space-x-1">
-                <CheckCircle2 size={11} className="text-emerald-700" />
-                <span>Online (Scale to 0)</span>
-              </span>
-            ) : (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold flex items-center space-x-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span>Standby</span>
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            Real-time financial analysis backed by your DynamoDB records and isolated Python code execution.
-          </p>
-        </div>
-        <div className="hidden sm:block text-right">
-          <span className="text-[10px] text-neutral-400 block font-mono truncate max-w-[240px]" title={getAgentApiUrl()}>
-            Endpoint: {getAgentApiUrl()}
-          </span>
-        </div>
-      </header>
-
-      {/* Message Thread Area */}
-      <div className="flex-1 overflow-y-auto py-6 space-y-6">
-        {messages.length === 0 ? (
-          /* Empty State */
-          <div className="h-full flex flex-col items-center justify-center p-6 text-center max-w-lg mx-auto space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-700 shadow-xs">
-              <Bot size={32} strokeWidth={1.75} />
-            </div>
-
-            <div className="space-y-1.5">
-              <h2 className="font-display font-bold text-xl text-neutral-900">
-                How can I help your business today?
-              </h2>
-              <p className="text-xs text-neutral-500 leading-relaxed">
-                Ask about cash balances, upcoming vendor payables, receivables, or run automated forecasting using scientific Python.
-              </p>
-            </div>
-
-            {/* Suggested Starter Prompts */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full pt-4 text-left">
-              {starterPrompts.map((prompt, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSend(prompt)}
-                  disabled={loading}
-                  className="p-3 bg-white border border-neutral-200/80 hover:border-neutral-900 rounded-xl text-xs text-neutral-700 font-medium transition-all hover:shadow-xs flex items-center justify-between group cursor-pointer text-left"
-                >
-                  <span className="leading-snug">{prompt}</span>
-                  <Sparkles size={13} className="text-neutral-400 group-hover:text-amber-500 shrink-0 ml-2" />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          /* Messages List */
-          <div className="space-y-4 max-w-3xl mx-auto w-full px-2">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex space-x-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {m.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-neutral-900 text-white flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot size={16} />
-                  </div>
-                )}
-                <div
-                  className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] sm:max-w-[78%] ${
-                    m.role === 'user'
-                      ? 'bg-neutral-900 text-white rounded-br-xs'
-                      : 'bg-white border border-neutral-200/80 text-neutral-800 shadow-xs rounded-bl-xs'
-                  }`}
-                >
-                  <div className="whitespace-pre-wrap font-sans">{m.content}</div>
-                  <div
-                    className={`mt-2 text-[10px] ${
-                      m.role === 'user' ? 'text-neutral-400 text-right' : 'text-neutral-400'
-                    }`}
-                  >
-                    {m.timestamp}
-                  </div>
-                </div>
-                {m.role === 'user' && (
-                  <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-700 flex items-center justify-center shrink-0 mt-0.5">
-                    <User size={16} />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Thinking / Running State */}
-            {loading && (
-              <div className="flex space-x-3 justify-start">
-                <div className="w-8 h-8 rounded-full bg-neutral-900 text-white flex items-center justify-center shrink-0 mt-0.5 animate-pulse">
-                  <Bot size={16} />
-                </div>
-                <div className="p-4 rounded-2xl bg-white border border-neutral-200/80 text-neutral-600 shadow-xs text-xs flex items-center space-x-3">
-                  <RefreshCw size={14} className="animate-spin text-neutral-500" />
-                  <span>The financial agent is analyzing your data...</span>
-                </div>
-              </div>
-            )}
-
-            {/* Error Notification */}
-            {error && (
-              <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start space-x-2">
-                <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-500" />
-                <div className="flex-1">
-                  <span className="font-semibold block">Request Error</span>
-                  <span>{error}</span>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
-
-      {/* Input Box */}
-      <div className="bg-white border border-neutral-200 rounded-2xl p-2.5 shadow-sm shrink-0">
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className="relative flex items-center"
-        >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about cash flow, balances, obligations, or projections..."
-            disabled={loading}
-            className="w-full pl-4 pr-12 py-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs sm:text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-900 disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="absolute right-2 p-2 rounded-lg bg-neutral-900 text-white disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors cursor-pointer disabled:cursor-not-allowed"
-            title="Send prompt to agent"
-          >
-            <Send size={15} />
-          </button>
-        </form>
-        <div className="flex items-center justify-between px-2 pt-2 text-[10px] text-neutral-400">
-          <span>Connected to serverless Lambda Function URL &bull; Scales to 0 when idle</span>
-          <span className="font-mono">Port 8080 / AWS Lambda Web Adapter</span>
-        </div>
-      </div>
-
-    </div>
-  );
+  return <Suspense fallback={<div className="flex min-h-[calc(100vh-9rem)] items-center justify-center text-xs text-neutral-400 sm:min-h-[calc(100vh-5rem)]">Loading chat…</div>}><ChatboxContent /></Suspense>;
 }

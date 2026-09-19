@@ -132,3 +132,78 @@ class AgentSettings:
             ),
             aws_profile=os.getenv("AWS_PROFILE") or None,
         )
+
+
+@dataclass(frozen=True)
+class RuntimeSettings:
+    """HTTP authentication, session, and invocation settings.
+
+    These values are deliberately separate from ``AgentSettings`` so that a
+    model configuration cannot accidentally become a tenant or authorization
+    setting.  The tenant remains server-side configuration only.
+    """
+
+    cognito_issuer: str
+    cognito_client_id: str
+    session_bucket: str
+    session_prefix: str = "agent-sessions/"
+    agent_version: str = "v1"
+    session_retention_days: int = 30
+    request_timeout_seconds: float = 90.0
+    aws_region: str = "ap-south-1"
+    session_region: str = "ap-south-1"
+    aws_profile: str | None = None
+
+    @classmethod
+    def from_environment(cls) -> "RuntimeSettings":
+        _load_local_environment()
+        region = os.getenv("AWS_REGION", "ap-south-1")
+        issuer = os.getenv("COGNITO_ISSUER", "").strip()
+        pool_id = os.getenv("COGNITO_USER_POOL_ID", "").strip()
+        if not issuer and pool_id:
+            pool_region = pool_id.partition("_")[0] or region
+            issuer = f"https://cognito-idp.{pool_region}.amazonaws.com/{pool_id}"
+        client_id = (
+            os.getenv("COGNITO_CLIENT_ID")
+            or os.getenv("COGNITO_USER_POOL_CLIENT_ID")
+            or ""
+        ).strip()
+        bucket = (
+            os.getenv("AGENT_SESSION_BUCKET_NAME")
+            or os.getenv("S3_BUCKET_NAME")
+            or ""
+        ).strip()
+        required = {
+            "COGNITO_ISSUER (or COGNITO_USER_POOL_ID)": issuer,
+            "COGNITO_CLIENT_ID": client_id,
+            "AGENT_SESSION_BUCKET_NAME": bucket,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise RuntimeError(
+                "Missing required environment variables: " + ", ".join(sorted(missing))
+            )
+
+        prefix = os.getenv("AGENT_SESSION_PREFIX", "agent-sessions/").strip()
+        if not prefix:
+            raise ValueError("AGENT_SESSION_PREFIX cannot be empty")
+        if not prefix.endswith("/"):
+            prefix += "/"
+        retention_days = int(os.getenv("AGENT_SESSION_RETENTION_DAYS", "30"))
+        timeout = float(os.getenv("AGENT_REQUEST_TIMEOUT_SECONDS", "90"))
+        if retention_days < 1:
+            raise ValueError("AGENT_SESSION_RETENTION_DAYS must be positive")
+        if timeout <= 0:
+            raise ValueError("AGENT_REQUEST_TIMEOUT_SECONDS must be positive")
+        return cls(
+            cognito_issuer=issuer,
+            cognito_client_id=client_id,
+            session_bucket=bucket,
+            session_prefix=prefix,
+            agent_version=os.getenv("AGENT_VERSION", "v1").strip() or "v1",
+            session_retention_days=retention_days,
+            request_timeout_seconds=timeout,
+            aws_region=region,
+            session_region=os.getenv("AGENT_SESSION_REGION", region).strip() or region,
+            aws_profile=os.getenv("AWS_PROFILE") or None,
+        )

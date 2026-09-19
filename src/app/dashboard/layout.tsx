@@ -15,12 +15,14 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [userEmail, setUserEmail] = useState<string>('');
+  const [userId, setUserId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     async function loadUser() {
       try {
         const user = await getCurrentUser();
+        setUserId(user.userId);
         try {
           const attributes = await fetchUserAttributes();
           setUserEmail(attributes.email || user.username || 'Store Owner');
@@ -39,6 +41,7 @@ export default function DashboardLayout({
 
   const handleSignOut = async () => {
     try {
+      window.dispatchEvent(new CustomEvent('finfine:signout', { detail: { userId } }));
       await signOut();
       router.push('/');
     } catch (err) {

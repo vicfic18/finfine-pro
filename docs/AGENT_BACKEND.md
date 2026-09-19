@@ -6,10 +6,22 @@ The Strands agent and HTTP API run on a developer computer. They read the
 existing DynamoDB tables without changing them. Financial Python calculations
 run in the private `finfine-code-executor` AWS Lambda function.
 
-The backend exposes the same routes for frontend development:
+This is a **single-tenant deployment**. `FINFINE_TENANT_ID` selects the
+business data server-side; a caller cannot choose or override it. Cognito's
+`sub` claim owns chat sessions within that tenant.
+
+The backend exposes:
 
 - `GET /ping`
-- `POST /invocations` with `{"prompt":"..."}`
+- `POST /invocations` with the stable chat contract documented below
+- `GET /invocations/conversations` for the signed-in user's recent chats
+- `GET /invocations/conversations/{sessionId}` for a safe visible transcript
+- `DELETE /invocations/conversations/{sessionId}` to remove a chat and its session data
+
+The browser calls the same-origin Next.js `/api/chat` route. That route
+validates the request, forwards the Cognito access token, applies a timeout,
+and sanitizes upstream failures. Only the server-side runtime URL changes when
+the FastAPI service is later moved behind Lambda/API Gateway.
 
 ## Agent Tools
 
@@ -71,6 +83,15 @@ Important settings:
 
 ```text
 AWS_REGION=ap-south-1
+FINFINE_TENANT_ID=msme-001
+COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/replace-with-user-pool-id
+COGNITO_CLIENT_ID=replace-with-user-pool-client-id
+AGENT_SESSION_BUCKET_NAME=replace-with-amplify-storage-bucket
+AGENT_SESSION_REGION=replace-with-amplify-storage-region
+AGENT_SESSION_PREFIX=agent-sessions/
+AGENT_VERSION=v1
+AGENT_SESSION_RETENTION_DAYS=30
+AGENT_REQUEST_TIMEOUT_SECONDS=90
 CODE_EXECUTOR_REGION=ap-south-1
 CODE_EXECUTOR_FUNCTION_NAME=finfine-code-executor
 OPENROUTER_API_KEY=replace-with-your-own-openrouter-key
@@ -78,8 +99,18 @@ MODEL_BASE_URL=https://openrouter.ai/api/v1
 MODEL_ID=nex-agi/nex-n2.5-pro:free
 ```
 
-The signed-in AWS identity must be able to read the three configured DynamoDB
-tables and invoke `finfine-code-executor`.
+The signed-in AWS identity running FastAPI must be able to read the configured
+DynamoDB tables, invoke `finfine-code-executor`, and read/write the
+`agent-sessions/` prefix in the existing Amplify storage bucket. Conversation
+deletion also requires `s3:DeleteObject`, and snapshot cleanup requires
+`s3:ListBucket` constrained to that prefix. That prefix is
+not present in `amplify/storage/resource.ts`, so Amplify does not grant browser
+identities access to it. The bucket encrypts objects at rest, and the backend
+adds a prefix-scoped lifecycle rule whose default retention is 30 days.
+
+After `npx ampx sandbox`, take the Cognito pool/client, storage bucket, and
+region values from `amplify_outputs.json`. Custom outputs also include the
+agent session bucket, prefix, and retention values.
 
 The backend uses OpenRouter's OpenAI-compatible API. Nex N2.5 Pro is the current
 test model because it supports tool calling, but it is not a hard requirement.
@@ -129,13 +160,67 @@ curl http://127.0.0.1:8080/ping
 
 ```bash
 curl -X POST http://127.0.0.1:8080/invocations \
+  -H 'Authorization: Bearer <cognito-access-token>' \
   -H 'Content-Type: application/json' \
-  -d '{"prompt":"What is my latest available balance? Show the source date."}'
+  -d '{"prompt":"What is my latest available balance? Show the source date.","requestId":"315b4a4e-d5f8-4b21-911c-37bb629e869d"}'
 ```
 
-Local frontend origins on ports `3000` and `5173` are allowed by default. Set
-`FINFINE_ALLOWED_ORIGINS` for another development origin. The API has no user
-authentication yet, so do not expose it publicly.
+The token must be a Cognito access token. The API validates its issuer,
+signature, expiry, `token_use=access`, client ID, and `sub`.
+
+### Invocation contract
+
+`sessionId` is omitted on the first turn. FastAPI returns the server-generated
+ID, and subsequent turns send it back.
+
+```json
+{
+  "prompt": "Will I have enough money to pay staff on the 10th?",
+  "requestId": "315b4a4e-d5f8-4b21-911c-37bb629e869d",
+  "sessionId": "optional-server-session-id"
+}
+```
+
+```json
+{
+  "status": "success",
+  "requestId": "315b4a4e-d5f8-4b21-911c-37bb629e869d",
+  "sessionId": "server-session-id",
+  "answer": "..."
+}
+```
+
+Errors always use `{status, requestId, code, message}` and do not expose tool
+arguments, tool outputs, model events, financial records, traces, or generated
+reasoning summaries. A supplied session that is missing, expired, belongs to a
+different user, or was created by an incompatible agent version returns the
+same `SESSION_UNAVAILABLE` error. The UI keeps the visible transcript and asks
+the user to start a new chat; it never silently replays the failed request.
+
+Completed requests are stored by `requestId` so a safe retry returns the same
+answer. Reusing a request ID for different input is rejected.
+
+### Durable sessions
+
+Each invocation creates a fresh Strands `Agent` and awaits `invoke_async()`.
+`SnapshotSessionManager` restores and saves the conversation through Strands'
+built-in `S3Storage`. Public session IDs remain UUIDs; S3 keys use an opaque
+hash of the authenticated owner, session ID, and agent version. In-process
+locks serialize turns for one session. S3 remains the durable source of truth
+across process restarts; there is no additional cache or DynamoDB session
+table.
+
+The same private prefix contains an application-owned conversation catalog and
+visible transcript JSON. Catalog keys are scoped by a SHA-256 digest of the
+Cognito `sub`. Transcripts contain only completed user prompts and final
+assistant answers; tool calls, tool results, and internal snapshot state are
+never returned by the history API. The first prompt becomes the title without
+another model call. These objects share the 30-day lifecycle used by the
+Strands snapshots.
+
+Catalog writes use an in-process owner lock, matching the current single
+runtime deployment. Move the catalog to a concurrency-safe index such as
+DynamoDB before enabling multiple writable runtime replicas.
 
 ## Lambda Executor
 
@@ -184,7 +269,6 @@ boundary.
 ## Tests
 
 ```bash
-uv run ruff check .
 uv run pytest -q
 ```
 
@@ -219,5 +303,5 @@ Expected trace:
 ## Planned API Hosting
 
 Only the Python executor is deployed today. The Strands agent and API remain
-local. The API is ordinary FastAPI and can later be hosted on Lambda, ECS, a VM,
-or another service without changing the frontend request format.
+local. A future Lambda/API Gateway handler must implement the same invocation
+contract; then update only `FINFINE_AGENT_RUNTIME_URL` for the Next.js proxy.

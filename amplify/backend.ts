@@ -51,6 +51,38 @@ export const backend = defineBackend({
   ingestionNormalizer,
 });
 
+const agentSessionPrefix = 'agent-sessions/';
+const agentSessionRetentionDays = Number.parseInt(
+  process.env.FINFINE_AGENT_SESSION_RETENTION_DAYS ?? '30',
+  10
+);
+
+if (!Number.isInteger(agentSessionRetentionDays) || agentSessionRetentionDays < 1) {
+  throw new Error('FINFINE_AGENT_SESSION_RETENTION_DAYS must be a positive integer');
+}
+
+// Agent snapshots are written only by the server-side runtime. The Amplify
+// storage access rules expose public/*, so this prefix is not browser-accessible.
+backend.storage.resources.cfnResources.cfnBucket.lifecycleConfiguration = {
+  rules: [
+    {
+      id: 'ExpireAgentSessions',
+      prefix: agentSessionPrefix,
+      expirationInDays: agentSessionRetentionDays,
+      status: 'Enabled',
+    },
+  ],
+};
+backend.storage.resources.cfnResources.cfnBucket.bucketEncryption = {
+  serverSideEncryptionConfiguration: [
+    {
+      serverSideEncryptionByDefault: {
+        sseAlgorithm: 'AES256',
+      },
+    },
+  ],
+};
+
 // Custom CDK Stack for Asynchronous Ingestion & Processing Pipeline (Section 3.2 of Architecture)
 const ingestionStack = backend.createStack('IngestionPipelineStack');
 
@@ -282,5 +314,8 @@ backend.addOutput({
     supplierProductTermsTableName: supplierTermsTable.tableName,
     merchantSettingsTableName: settingsTable.tableName,
     recurringExpenseTableName: recurringTable.tableName,
+    agentSessionBucketName: backend.storage.resources.bucket.bucketName,
+    agentSessionPrefix,
+    agentSessionRetentionDays,
   },
 });

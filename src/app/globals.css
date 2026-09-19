@@ -37,6 +37,53 @@
 :root {
   --font-cirka: 'PP Cirka', Georgia, serif;
   --font-gilroy: 'Gilroy', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --background: #FBF9F5;
+  --foreground: #111215;
+  --card: #FFFFFF;
+  --card-foreground: #111215;
+  --popover: #FFFFFF;
+  --popover-foreground: #111215;
+  --primary: #111317;
+  --primary-foreground: #F9FAFB;
+  --secondary: #F4F0E8;
+  --secondary-foreground: #111215;
+  --muted: #EFEAE1;
+  --muted-foreground: #71717A;
+  --accent: #EFEAE1;
+  --accent-foreground: #111215;
+  --destructive: #DC2626;
+  --border: #E5E0D6;
+  --input: #D8D1C4;
+  --ring: #E85D25;
+  --finfine-terracotta: #E85D25;
+  --finfine-gold: #D97706;
+  --finfine-emerald: #059669;
+  --finfine-dark-pod: #111317;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-finfine-terracotta: var(--finfine-terracotta);
+  --color-finfine-gold: var(--finfine-gold);
+  --color-finfine-emerald: var(--finfine-emerald);
+  --color-finfine-dark-pod: var(--finfine-dark-pod);
 }
 
 body {
@@ -113,6 +160,11 @@ body {
   50% {
     transform: translateY(-6px) scale(1.015);
   }
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 
 .animate-draw-graph-blue {

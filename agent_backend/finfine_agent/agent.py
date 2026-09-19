@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from collections.abc import Callable
+from threading import Event
 from typing import Any
 
 from strands import Agent
@@ -23,6 +25,10 @@ from finfine_agent.tools import (
     get_transactions,
     get_upcoming_obligations,
 )
+
+
+class AgentCancelledError(Exception):
+    """The agent invocation was cancelled before producing a final answer."""
 
 
 def create_model(settings: AgentSettings) -> OpenAIModel:
@@ -67,6 +73,7 @@ def create_agent(
     artifact_store: LocalArtifactStore | None = None,
     agent_factory: Callable[..., Any] = Agent,
     trace: bool = True,
+    session_manager: Any | None = None,
 ) -> Any:
     """Build the local agent with financial reads and managed code execution."""
     resolved = settings or AgentSettings.from_environment()
@@ -85,7 +92,7 @@ def create_agent(
         if trace
         else {"callback_handler": None}
     )
-    return agent_factory(
+    kwargs = dict(
         model=resolved_model,
         system_prompt=build_system_instructions(),
         tools=[
@@ -98,6 +105,9 @@ def create_agent(
         ],
         **trace_options,
     )
+    if session_manager is not None:
+        kwargs["session_manager"] = session_manager
+    return agent_factory(**kwargs)
 
 
 def ask(agent: Any, question: str) -> str:
@@ -106,6 +116,63 @@ def ask(agent: Any, question: str) -> str:
     if not cleaned:
         raise ValueError("question cannot be empty")
     return str(agent(cleaned))
+
+
+def _result_text(result: Any) -> str:
+    """Extract final text from a Strands result while supporting test fakes."""
+    if isinstance(result, str):
+        return result
+    message = result.get("message") if isinstance(result, dict) else getattr(result, "message", None)
+    if isinstance(message, dict):
+        content = message.get("content", [])
+        text_parts = [block.get("text", "") for block in content if isinstance(block, dict)]
+        text = "".join(part for part in text_parts if part)
+        if text:
+            return text
+    return str(result)
+
+
+async def ask_async(
+    agent: Any,
+    question: str,
+    *,
+    request_id: str | None = None,
+    timeout_seconds: float = 90.0,
+    cancel_signal: Any | None = None,
+) -> str:
+    """Invoke one request asynchronously and return only final answer text."""
+    cleaned = question.strip()
+    if not cleaned:
+        raise ValueError("question cannot be empty")
+    invoke = getattr(agent, "invoke_async", None)
+    if invoke is None:
+        return await asyncio.to_thread(ask, agent, cleaned)
+    if cancel_signal is None:
+        cancel_signal = Event()
+    kwargs: dict[str, Any] = {}
+    if request_id is not None:
+        kwargs["idempotency_token"] = request_id
+    if cancel_signal is not None:
+        kwargs["cancel_signal"] = cancel_signal
+    task = asyncio.create_task(invoke(cleaned, **kwargs))
+    try:
+        result = await asyncio.wait_for(asyncio.shield(task), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        if cancel_signal is not None:
+            cancel_signal.set()
+        cancel = getattr(agent, "cancel", None)
+        if cancel is not None:
+            cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=2)
+        except (Exception, asyncio.CancelledError):
+            pass
+        raise TimeoutError("agent invocation timed out")
+    if getattr(result, "stop_reason", None) == "cancelled" or (
+        isinstance(result, dict) and result.get("stop_reason") == "cancelled"
+    ):
+        raise AgentCancelledError("agent invocation was cancelled")
+    return _result_text(result)
 
 
 def run_chat(agent: Any, *, trace: bool = True) -> None:

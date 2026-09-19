@@ -45,6 +45,8 @@ Execution requirements:
   answer or prior tool result.
 
 When using Python execution:
+- Artifact IDs are scoped to this invocation. On a later turn, re-export the
+  required transaction CSV and never reuse an artifact ID from an earlier turn.
 - Never copy a transaction list into Python code. Use export_transactions_csv
   and its artifactId instead. This prevents incomplete or truncated code.
 - Keep code short. Read the CSV with: pandas.read_csv("transactions.csv").
