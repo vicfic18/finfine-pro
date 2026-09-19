@@ -66,6 +66,12 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
             <span>Tax Lockbox:</span>
             <span className="font-medium text-neutral-800 font-display">₹{data.statutoryLockbox.toLocaleString('en-IN')}</span>
           </div>
+          {data.minimumCashBuffer > 0 && (
+            <div className="flex justify-between text-neutral-500">
+              <span>Safety Buffer:</span>
+              <span className="font-medium text-neutral-800 font-display">₹{data.minimumCashBuffer.toLocaleString('en-IN')}</span>
+            </div>
+          )}
           <div className="flex justify-between text-neutral-400">
             <span>Total Bank:</span>
             <span className="font-medium text-neutral-700">₹{data.totalLiquidBalance.toLocaleString('en-IN')}</span>

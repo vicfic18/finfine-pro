@@ -1,20 +1,33 @@
 import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import * as fs from 'fs';
 import * as path from 'path';
+import { invalidateDashboardCache } from '@/lib/financial-store';
 
 const region = process.env.AWS_REGION || 'ap-south-1';
 const bucketName =
   process.env.S3_BUCKET_NAME || 'amplify-finfinepro-vicfic-finfinedocumentstoragebu-nm3ks1cueqmt';
 const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
+
+// Canonical DynamoDB Tables
 const docTableName =
   process.env.DOCUMENT_RECORD_TABLE_NAME || 'DocumentRecord-ifsueqzwybf6nau7duulv5qweq-NONE';
 const txnTableName =
   process.env.TRANSACTION_TABLE_NAME || 'Transaction-ifsueqzwybf6nau7duulv5qweq-NONE';
 const oblTableName =
   process.env.OBLIGATION_TABLE_NAME || 'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
+const prodTableName =
+  process.env.PRODUCT_TABLE_NAME || 'Product-ifsueqzwybf6nau7duulv5qweq-NONE';
+const purchaseTableName =
+  process.env.PURCHASE_TABLE_NAME || 'Purchase-ifsueqzwybf6nau7duulv5qweq-NONE';
+const purchaseLineItemTableName =
+  process.env.PURCHASE_LINE_ITEM_TABLE_NAME || 'PurchaseLineItem-ifsueqzwybf6nau7duulv5qweq-NONE';
+const cashPositionTableName =
+  process.env.CASH_POSITION_TABLE_NAME || 'CashPositionSnapshot-ifsueqzwybf6nau7duulv5qweq-NONE';
+const supplierProfileTableName =
+  process.env.SUPPLIER_PROFILE_TABLE_NAME || 'SupplierProfile-ifsueqzwybf6nau7duulv5qweq-NONE';
 
 const s3Client = new S3Client({ region });
 const dynamoClient = new DynamoDBClient({ region });
@@ -106,114 +119,47 @@ export async function POST(request: Request) {
 
     console.log('[Ingestion API] S3 Upload successful. Invoking Document Extraction & Normalization pipeline...');
 
-    // 2. Trigger Extraction & Normalization
-    let pipelineResult: any = null;
-    let extractedCount = 0;
-    const nowIso = new Date().toISOString();
+    // 2. Set environment variables for Lambda handlers
+    process.env.DOCUMENT_RECORD_TABLE_NAME = docTableName;
+    process.env.TRANSACTION_TABLE_NAME = txnTableName;
+    process.env.OBLIGATION_TABLE_NAME = oblTableName;
+    process.env.PRODUCT_TABLE_NAME = prodTableName;
+    process.env.PURCHASE_TABLE_NAME = purchaseTableName;
+    process.env.PURCHASE_LINE_ITEM_TABLE_NAME = purchaseLineItemTableName;
+    process.env.CASH_POSITION_TABLE_NAME = cashPositionTableName;
+    process.env.SUPPLIER_PROFILE_TABLE_NAME = supplierProfileTableName;
 
-    if (docType === 'BANK_STATEMENT') {
-      try {
-        process.env.DOCUMENT_RECORD_TABLE_NAME = docTableName;
-        process.env.TRANSACTION_TABLE_NAME = txnTableName;
-        process.env.OBLIGATION_TABLE_NAME = oblTableName;
+    // 3. Execute Document Extractor & Ingestion Normalizer
+    const { handler: extractorHandler } = await import(
+      '../../../../../amplify/functions/document-extractor/handler'
+    );
+    const { handler: normalizerHandler } = await import(
+      '../../../../../amplify/functions/ingestion-normalizer/handler'
+    );
 
-        const { handler: extractorHandler } = await import(
-          '../../../../../amplify/functions/document-extractor/handler'
-        );
-        const { handler: normalizerHandler } = await import(
-          '../../../../../amplify/functions/ingestion-normalizer/handler'
-        );
+    const extractOutput = await (extractorHandler as any)({
+      bucket: bucketName,
+      key: s3Key,
+      tenantId,
+      documentId,
+      documentType: docType,
+      manualMetadata,
+    });
 
-        const extractOutput = await (extractorHandler as any)({
-          bucket: bucketName,
-          key: s3Key,
-          tenantId,
-          documentId,
-        });
+    const pipelineResult = await (normalizerHandler as any)(extractOutput);
 
-        pipelineResult = await (normalizerHandler as any)(extractOutput);
-        extractedCount = extractOutput?.rawExtraction?.transactions?.length || 7;
-        console.log(`[Ingestion API] Extracted ${extractedCount} transactions into DynamoDB.`);
-      } catch (pipelineErr) {
-        console.warn('[Ingestion API] Extractor Lambda invocation encountered error, executing fallback record save:', pipelineErr);
-        
-        // Ensure DocumentRecord is safely recorded in DynamoDB even if Bedrock model access has transient latency
-        const fallbackMeta = {
-          bankOrIssuerName: 'HDFC Bank',
-          accountNumber: '50200083921045',
-          statementPeriod: { startDate: '01/10/2026', endDate: '07/10/2026' },
-          openingBalance: 84500,
-          closingBalance: 82350,
-          statutoryIdentifiers: { gstin: '27AABCS1429B1Z5', pan: 'AABCS1429B' },
-          modelUsed: 'deterministic-document-extractor',
-          summary: {
-            totalInflow: 40800,
-            totalOutflow: 42950,
-            transactionCount: 7,
-            obligationCount: 0,
-          },
-        };
+    const extractedCount =
+      (pipelineResult?.summary?.transactionCount || 0) +
+      (pipelineResult?.summary?.obligationCount || 0) +
+      (pipelineResult?.summary?.productCount || 0) +
+      (pipelineResult?.summary?.purchaseCount || 0);
 
-        await docClient.send(
-          new PutCommand({
-            TableName: docTableName,
-            Item: {
-              id: documentId,
-              tenantId,
-              fileName: sanitizedFileName,
-              s3Key,
-              fileType,
-              documentType: 'BANK_STATEMENT',
-              status: 'EXTRACTED',
-              extractedEntityCount: 7,
-              rawMetadata: JSON.stringify(fallbackMeta),
-              processedAt: nowIso,
-              createdAt: nowIso,
-              updatedAt: nowIso,
-              __typename: 'DocumentRecord',
-            },
-          })
-        );
-        extractedCount = 7;
-      }
-    } else {
-      // Invoices and Bills
-      const invoiceMeta = {
-        invoiceNumber: manualMetadata.invoiceNumber || `INV-${timestamp.toString().slice(-4)}`,
-        counterpartyName: manualMetadata.counterpartyName || 'Supplier / Vendor',
-        counterpartyType: 'VENDOR',
-        category: 'VENDOR_BILL',
-        gstin: manualMetadata.gstin || '27AABCS9921D1Z2',
-        amount: manualMetadata.amount || 25000,
-        taxAmount: (manualMetadata.amount || 25000) * 0.18,
-        invoiceDate: nowIso.slice(0, 10),
-        dueDate: manualMetadata.dueDate || '2026-10-25',
-        matchedBankRef: 'Pending Bank Match',
-        reconciliationStatus: 'PARTIALLY_MATCHED',
-      };
+    console.log(
+      `[Ingestion API] Successfully processed document ${documentId}: ${extractedCount} entities normalized into DynamoDB.`
+    );
 
-      await docClient.send(
-        new PutCommand({
-          TableName: docTableName,
-          Item: {
-            id: documentId,
-            tenantId,
-            fileName: sanitizedFileName,
-            s3Key,
-            fileType,
-            documentType: 'INVOICE',
-            status: 'EXTRACTED',
-            extractedEntityCount: 1,
-            rawMetadata: JSON.stringify(invoiceMeta),
-            processedAt: nowIso,
-            createdAt: nowIso,
-            updatedAt: nowIso,
-            __typename: 'DocumentRecord',
-          },
-        })
-      );
-      extractedCount = 1;
-    }
+    // 4. Invalidate memory cache so dashboard instantly fetches fresh canonical metrics
+    invalidateDashboardCache();
 
     return NextResponse.json({
       success: true,
@@ -224,8 +170,8 @@ export async function POST(request: Request) {
       extractedEntityCount: extractedCount,
       message:
         docType === 'BANK_STATEMENT'
-          ? `Successfully uploaded to S3 and extracted ${extractedCount} bank transactions into DynamoDB ledger.`
-          : `Successfully uploaded bill to S3 and logged invoice obligation in DynamoDB.`,
+          ? `Successfully uploaded to S3 and normalized ${pipelineResult?.summary?.transactionCount || 0} bank transactions into DynamoDB ledger.`
+          : `Successfully uploaded bill to S3 and persisted canonical Product, Purchase, SupplierProfile, and Obligation records.`,
       pipelineSummary: pipelineResult?.summary || null,
     });
   } catch (err: any) {

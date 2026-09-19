@@ -48,15 +48,51 @@ backend.storage.resources.bucket.grantRead(backend.documentExtractor.resources.l
 const docTable = backend.data.resources.tables['DocumentRecord'];
 const txnTable = backend.data.resources.tables['Transaction'];
 const oblTable = backend.data.resources.tables['Obligation'];
+const prodTable = backend.data.resources.tables['Product'];
+const purchaseTable = backend.data.resources.tables['Purchase'];
+const purchaseLineItemTable = backend.data.resources.tables['PurchaseLineItem'];
+const saleTable = backend.data.resources.tables['Sale'];
+const saleLineItemTable = backend.data.resources.tables['SaleLineItem'];
+const cashTable = backend.data.resources.tables['CashPositionSnapshot'];
+const supplierTable = backend.data.resources.tables['SupplierProfile'];
+const supplierTermsTable = backend.data.resources.tables['SupplierProductTerms'];
+const settingsTable = backend.data.resources.tables['MerchantFinancialSettings'];
+const recurringTable = backend.data.resources.tables['RecurringExpense'];
 
-docTable.grantReadWriteData(backend.ingestionNormalizer.resources.lambda);
-txnTable.grantReadWriteData(backend.ingestionNormalizer.resources.lambda);
-oblTable.grantReadWriteData(backend.ingestionNormalizer.resources.lambda);
+const normalizerTables = [
+  docTable,
+  txnTable,
+  oblTable,
+  prodTable,
+  purchaseTable,
+  purchaseLineItemTable,
+  saleTable,
+  saleLineItemTable,
+  cashTable,
+  supplierTable,
+  supplierTermsTable,
+  settingsTable,
+  recurringTable,
+];
+
+for (const tbl of normalizerTables) {
+  tbl.grantReadWriteData(backend.ingestionNormalizer.resources.lambda);
+}
 
 const normalizerLambda = backend.ingestionNormalizer.resources.lambda as lambda.Function;
 normalizerLambda.addEnvironment('DOCUMENT_RECORD_TABLE_NAME', docTable.tableName);
 normalizerLambda.addEnvironment('TRANSACTION_TABLE_NAME', txnTable.tableName);
 normalizerLambda.addEnvironment('OBLIGATION_TABLE_NAME', oblTable.tableName);
+normalizerLambda.addEnvironment('PRODUCT_TABLE_NAME', prodTable.tableName);
+normalizerLambda.addEnvironment('PURCHASE_TABLE_NAME', purchaseTable.tableName);
+normalizerLambda.addEnvironment('PURCHASE_LINE_ITEM_TABLE_NAME', purchaseLineItemTable.tableName);
+normalizerLambda.addEnvironment('SALE_TABLE_NAME', saleTable.tableName);
+normalizerLambda.addEnvironment('SALE_LINE_ITEM_TABLE_NAME', saleLineItemTable.tableName);
+normalizerLambda.addEnvironment('CASH_POSITION_TABLE_NAME', cashTable.tableName);
+normalizerLambda.addEnvironment('SUPPLIER_PROFILE_TABLE_NAME', supplierTable.tableName);
+normalizerLambda.addEnvironment('SUPPLIER_PRODUCT_TERMS_TABLE_NAME', supplierTermsTable.tableName);
+normalizerLambda.addEnvironment('MERCHANT_SETTINGS_TABLE_NAME', settingsTable.tableName);
+normalizerLambda.addEnvironment('RECURRING_EXPENSE_TABLE_NAME', recurringTable.tableName);
 
 // 5. Build Step Functions State Machine
 const extractTask = new tasks.LambdaInvoke(ingestionStack, 'ExtractDocumentDataTask', {
@@ -135,5 +171,15 @@ backend.addOutput({
     documentRecordTableName: docTable.tableName,
     transactionTableName: txnTable.tableName,
     obligationTableName: oblTable.tableName,
+    productTableName: prodTable.tableName,
+    purchaseTableName: purchaseTable.tableName,
+    purchaseLineItemTableName: purchaseLineItemTable.tableName,
+    saleTableName: saleTable.tableName,
+    saleLineItemTableName: saleLineItemTable.tableName,
+    cashPositionTableName: cashTable.tableName,
+    supplierProfileTableName: supplierTable.tableName,
+    supplierProductTermsTableName: supplierTermsTable.tableName,
+    merchantSettingsTableName: settingsTable.tableName,
+    recurringExpenseTableName: recurringTable.tableName,
   },
 });

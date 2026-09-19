@@ -4,16 +4,23 @@ import type { Handler } from 'aws-lambda';
 import { randomUUID } from 'crypto';
 
 const dynamoDbClient = new DynamoDBClient({});
-const docClient = DynamoDBDocumentClient.from(dynamoDbClient);
+const docClient = DynamoDBDocumentClient.from(dynamoDbClient, {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
 // Priority weights (w_i^type) mapping for deterministic optimization engine
 const CATEGORY_PRIORITY_WEIGHTS: Record<string, number> = {
   STATUTORY_TAX: 1.0, // Non-negotiable legal obligation
+  GST_PAYMENT: 1.0,
+  TDS_PAYMENT: 1.0,
   UTILITY: 0.85, // Essential for operational business continuity
+  UTILITY_BILL: 0.85,
   SALARY: 0.8, // Crucial employee retention & operations
   LOAN_EMI: 0.75, // Credit rating preservation
   VENDOR_PAYMENT: 0.7, // Supplier relationships & supply continuity
+  VENDOR_BILL: 0.7,
   CUSTOMER_RECEIPT: 0.6, // Inflow reconciliation
+  CUSTOMER_INVOICE: 0.6,
   OPERATING_EXPENSE: 0.5, // General business overheads
   OTHER: 0.3, // Discretionary
 };
@@ -26,11 +33,9 @@ function normalizeDate(rawDate?: string): string {
     return new Date().toISOString().split('T')[0];
   }
   const clean = rawDate.trim();
-  // If already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
     return clean;
   }
-  // If DD/MM/YYYY or DD-MM-YYYY
   const ddmmyyyy = clean.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (ddmmyyyy) {
     const day = ddmmyyyy[1].padStart(2, '0');
@@ -38,7 +43,6 @@ function normalizeDate(rawDate?: string): string {
     const year = ddmmyyyy[3];
     return `${year}-${month}-${day}`;
   }
-  // Try JS Date parsing
   const parsed = new Date(clean);
   if (!isNaN(parsed.getTime())) {
     return parsed.toISOString().split('T')[0];
@@ -52,7 +56,6 @@ function validateStatutoryId(id?: string | null): { gstin?: string; pan?: string
   const clean = id.trim().toUpperCase();
   if (GSTIN_REGEX.test(clean)) {
     result.gstin = clean;
-    // GSTIN contains PAN as characters 3 to 12
     result.pan = clean.substring(2, 12);
   } else if (PAN_REGEX.test(clean)) {
     result.pan = clean;
@@ -88,13 +91,11 @@ function extractUpiDetails(description?: string, rawVpa?: string): {
     isUpi = true;
   }
 
-  // Look for 12-digit UTR/RRN
   const refMatch = text.match(/\b\d{12}\b/);
   if (refMatch) {
     refNumber = refMatch[0];
   }
 
-  // Look for VPA pattern if not provided
   if (!upiVpa) {
     const vpaMatch = text.match(/([a-zA-Z0-9.\-_]+@[a-zA-Z0-9]+)/);
     if (vpaMatch) {
@@ -102,7 +103,6 @@ function extractUpiDetails(description?: string, rawVpa?: string): {
     }
   }
 
-  // If UPI narration is like UPI/CR/12345/Name/Bank or UPI/DR/12345/Name@vpa
   const upiParts = text.split('/');
   if (upiParts.length >= 4) {
     cleanPartyName = upiParts[3].replace(/@.*/, '').replace(/_/g, ' ').trim();
@@ -120,11 +120,22 @@ export const handler: Handler = async (event) => {
   const documentId = event.documentId || `doc-${Date.now()}`;
   const rawExtraction = event.rawExtraction || {};
 
+  // Resolve Canonical DynamoDB Table Names
   const docTableName = process.env.DOCUMENT_RECORD_TABLE_NAME;
   const txnTableName = process.env.TRANSACTION_TABLE_NAME;
   const oblTableName = process.env.OBLIGATION_TABLE_NAME;
+  const prodTableName = process.env.PRODUCT_TABLE_NAME;
+  const purchaseTableName = process.env.PURCHASE_TABLE_NAME;
+  const purchaseLineItemTableName = process.env.PURCHASE_LINE_ITEM_TABLE_NAME;
+  const saleTableName = process.env.SALE_TABLE_NAME;
+  const saleLineItemTableName = process.env.SALE_LINE_ITEM_TABLE_NAME;
+  const cashPositionTableName = process.env.CASH_POSITION_TABLE_NAME;
+  const supplierProfileTableName = process.env.SUPPLIER_PROFILE_TABLE_NAME;
+  const supplierProductTermsTableName = process.env.SUPPLIER_PRODUCT_TERMS_TABLE_NAME;
 
-  console.log(`Target Tables: DocumentRecord=${docTableName}, Transaction=${txnTableName}, Obligation=${oblTableName}`);
+  console.log(
+    `Target Tables: DocumentRecord=${docTableName}, Transaction=${txnTableName}, Obligation=${oblTableName}, Product=${prodTableName}, CashSnapshot=${cashPositionTableName}, Purchase=${purchaseTableName}`
+  );
 
   const rawGstin = rawExtraction.statutoryIdentifiers?.gstin || '';
   const rawPan = rawExtraction.statutoryIdentifiers?.pan || '';
@@ -132,12 +143,15 @@ export const handler: Handler = async (event) => {
 
   const rawTransactions = Array.isArray(rawExtraction.transactions) ? rawExtraction.transactions : [];
   const rawObligations = Array.isArray(rawExtraction.obligations) ? rawExtraction.obligations : [];
+  const rawLineItems = Array.isArray(rawExtraction.lineItems) ? rawExtraction.lineItems : [];
+  const rawSupplierTerms = rawExtraction.supplierTerms || null;
+  const rawInvoiceDetails = rawExtraction.invoiceDetails || null;
 
   const nowIso = new Date().toISOString();
   let totalInflow = 0;
   let totalOutflow = 0;
 
-  // Process & Normalize Transactions
+  // 1. Process & Normalize Transactions
   const normalizedTransactions = rawTransactions.map((tx: any) => {
     const amount = normalizeAmount(tx.amount);
     const type: 'INFLOW' | 'OUTFLOW' = tx.type === 'INFLOW' ? 'INFLOW' : 'OUTFLOW';
@@ -147,7 +161,6 @@ export const handler: Handler = async (event) => {
     const upiInfo = extractUpiDetails(tx.description, tx.counterpartyIdentifier);
     const category = tx.inferredCategory || (type === 'INFLOW' ? 'CUSTOMER_RECEIPT' : 'OPERATING_EXPENSE');
     const priorityWeight = CATEGORY_PRIORITY_WEIGHTS[category] ?? 0.5;
-
     const statutory = validateStatutoryId(tx.statutoryId || validatedIds.gstin || validatedIds.pan);
 
     return {
@@ -173,35 +186,234 @@ export const handler: Handler = async (event) => {
     };
   });
 
-  // Process & Normalize Obligations
-  const normalizedObligations = rawObligations.map((obl: any) => {
+  // 2. Normalize Supplier Profile and Products if Line Items or Invoice Details exist
+  let supplierId: string | null = null;
+  let primaryProductId: string | null = null;
+  const createdProducts: any[] = [];
+  const createdPurchases: any[] = [];
+  const createdPurchaseLineItems: any[] = [];
+  const createdSales: any[] = [];
+  const createdSaleLineItems: any[] = [];
+
+  const partyName =
+    rawInvoiceDetails?.partyName ||
+    rawSupplierTerms?.supplierName ||
+    (rawExtraction.documentType === 'INVOICE' && rawExtraction.bankOrIssuerName ? rawExtraction.bankOrIssuerName : null);
+
+  const partyType = rawInvoiceDetails?.partyType || (rawExtraction.documentType === 'INVOICE' ? 'SUPPLIER' : null);
+
+  if (partyName && partyType === 'SUPPLIER' && supplierProfileTableName) {
+    supplierId = `sup-${tenantId}-${partyName.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)}`;
+    const supplierItem = {
+      id: supplierId,
+      tenantId,
+      supplierName: partyName,
+      leadTimeDays: rawSupplierTerms?.leadTimeDays ?? 3,
+      creditPeriodDays: rawSupplierTerms?.creditPeriodDays ?? 30,
+      minimumOrderQuantity: rawSupplierTerms?.minimumOrderQuantity ?? 1,
+      deliveryCost: rawSupplierTerms?.deliveryCost ?? 0,
+      paymentTermsText: rawSupplierTerms?.paymentTermsText ?? 'Net 30',
+      reliabilityScore: 0.95,
+      notes: `Extracted from document ${documentId}`,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      __typename: 'SupplierProfile',
+    };
+
+    try {
+      console.log(`Writing SupplierProfile: ${supplierId}...`);
+      await docClient.send(
+        new PutCommand({
+          TableName: supplierProfileTableName,
+          Item: supplierItem,
+        })
+      );
+    } catch (supErr) {
+      console.warn(`Could not save SupplierProfile: ${supErr}`);
+    }
+  }
+
+  // Upsert Products from line items
+  if (rawLineItems.length > 0 && prodTableName) {
+    for (const item of rawLineItems) {
+      const prodName = item.productName || 'General Item';
+      const cleanProdId = `prod-${tenantId}-${prodName.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)}`;
+      if (!primaryProductId) primaryProductId = cleanProdId;
+
+      const productItem = {
+        id: cleanProdId,
+        tenantId,
+        name: prodName,
+        sku: item.sku || `SKU-${prodName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)}`,
+        category: item.category || 'INVENTORY',
+        unitOfMeasure: item.unitOfMeasure || 'unit',
+        isActive: true,
+        aliases: [prodName],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        __typename: 'Product',
+      };
+      createdProducts.push(productItem);
+
+      try {
+        await docClient.send(
+          new PutCommand({
+            TableName: prodTableName,
+            Item: productItem,
+          })
+        );
+      } catch (prodErr) {
+        console.warn(`Could not save Product ${cleanProdId}:`, prodErr);
+      }
+    }
+  }
+
+  // 3. Process & Normalize Obligations
+  const primaryObligationId = randomUUID();
+  const normalizedObligations = rawObligations.map((obl: any, idx: number) => {
     const amount = normalizeAmount(obl.amount);
-    const category = obl.category || 'VENDOR_BILL';
+    const category = obl.category || (rawExtraction.documentType === 'INVOICE' ? 'VENDOR_BILL' : 'OTHER');
     const isStatutory = obl.isStatutory ?? (category.startsWith('GST') || category.startsWith('TDS'));
     const priorityWeight = isStatutory ? 1.0 : (CATEGORY_PRIORITY_WEIGHTS[category] ?? 0.7);
 
     return {
-      id: randomUUID(),
+      id: idx === 0 ? primaryObligationId : randomUUID(),
       tenantId,
       documentId,
-      title: obl.title || 'Upcoming Financial Obligation',
-      counterpartyName: obl.counterpartyName || 'Counterparty',
+      title: obl.title || (partyName ? `Invoice from ${partyName}` : 'Upcoming Financial Obligation'),
+      counterpartyName: obl.counterpartyName || partyName || 'Counterparty',
       statutoryId: obl.statutoryId || (isStatutory ? validatedIds.gstin || validatedIds.pan : null),
       amount,
-      dueDate: normalizeDate(obl.dueDate),
+      dueDate: normalizeDate(obl.dueDate || rawInvoiceDetails?.dueDate),
       type: obl.type === 'RECEIVABLE' ? 'RECEIVABLE' : 'PAYABLE',
       category,
       priorityWeight,
-      penaltyRatePerDay: obl.penaltyRatePerDay || (isStatutory ? 0.0005 : 0.0002), // e.g. 18% per annum statutory
+      penaltyRatePerDay: obl.penaltyRatePerDay || (isStatutory ? 0.0005 : 0.0002),
       isStatutory,
       status: 'SCHEDULED',
+      supplierId: supplierId || null,
+      productId: primaryProductId || null,
+      allowPartialPayment: true,
+      expectedSettlementDate: normalizeDate(obl.dueDate || rawInvoiceDetails?.dueDate),
+      probability: 0.95,
+      confidence: 'HIGH',
+      sourceRecordIds: [documentId],
       createdAt: nowIso,
       updatedAt: nowIso,
       __typename: 'Obligation',
     };
   });
 
-  // Persist Document Record
+  // 4. Create Purchase & PurchaseLineItems (or Sales)
+  if (partyType === 'SUPPLIER' && (rawLineItems.length > 0 || rawInvoiceDetails) && purchaseTableName) {
+    const purchaseId = `pur-${randomUUID()}`;
+    const totalAmount =
+      rawInvoiceDetails?.totalAmount != null
+        ? normalizeAmount(rawInvoiceDetails.totalAmount)
+        : rawLineItems.reduce((acc: number, l: any) => acc + (normalizeAmount(l.netAmount) || normalizeAmount(l.grossAmount)), 0);
+
+    const purchaseItem = {
+      id: purchaseId,
+      tenantId,
+      purchaseDate: normalizeDate(rawInvoiceDetails?.invoiceDate),
+      supplierId: supplierId || null,
+      supplierName: partyName || 'Supplier',
+      totalAmount,
+      documentId,
+      obligationId: primaryObligationId,
+      sourceRecordIds: [documentId],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      __typename: 'Purchase',
+    };
+    createdPurchases.push(purchaseItem);
+
+    try {
+      console.log(`Writing Purchase: ${purchaseId}...`);
+      await docClient.send(
+        new PutCommand({
+          TableName: purchaseTableName,
+          Item: purchaseItem,
+        })
+      );
+    } catch (purErr) {
+      console.warn('Could not save Purchase:', purErr);
+    }
+
+    if (purchaseLineItemTableName && rawLineItems.length > 0) {
+      for (const item of rawLineItems) {
+        const prodName = item.productName || 'General Item';
+        const cleanProdId = `prod-${tenantId}-${prodName.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30)}`;
+        const lineItem = {
+          id: randomUUID(),
+          tenantId,
+          purchaseId,
+          productId: cleanProdId,
+          quantity: item.quantity || 1,
+          unitPurchaseCost: normalizeAmount(item.unitPrice),
+          totalPurchaseAmount: normalizeAmount(item.netAmount || item.grossAmount || (item.quantity * item.unitPrice)),
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          __typename: 'PurchaseLineItem',
+        };
+        createdPurchaseLineItems.push(lineItem);
+
+        try {
+          await docClient.send(
+            new PutCommand({
+              TableName: purchaseLineItemTableName,
+              Item: lineItem,
+            })
+          );
+        } catch (pliErr) {
+          console.warn('Could not save PurchaseLineItem:', pliErr);
+        }
+      }
+    }
+  }
+
+  // 5. Persist CashPositionSnapshot if opening/closing balance is present
+  let cashSnapshotSaved = false;
+  const rawClosing = rawExtraction.closingBalance != null ? normalizeAmount(rawExtraction.closingBalance) : null;
+  const rawOpening = rawExtraction.openingBalance != null ? normalizeAmount(rawExtraction.openingBalance) : null;
+  const effectiveCash = rawClosing ?? rawOpening;
+
+  if (effectiveCash != null && cashPositionTableName) {
+    const snapshotDate = normalizeDate(rawExtraction.statementPeriod?.endDate || rawExtraction.statementPeriod?.startDate);
+    const cashSnapshotItem = {
+      id: `snap-${tenantId}-${snapshotDate}`,
+      tenantId,
+      asOf: snapshotDate,
+      bankBalance: effectiveCash,
+      cashOnHand: 0,
+      totalLiquidCash: effectiveCash,
+      sourceDocumentIds: [documentId],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      __typename: 'CashPositionSnapshot',
+    };
+
+    try {
+      console.log(`Writing CashPositionSnapshot for tenant ${tenantId} as of ${snapshotDate}...`);
+      await docClient.send(
+        new PutCommand({
+          TableName: cashPositionTableName,
+          Item: cashSnapshotItem,
+        })
+      );
+      cashSnapshotSaved = true;
+    } catch (cashErr) {
+      console.warn('Could not write CashPositionSnapshot:', cashErr);
+    }
+  }
+
+  // 6. Persist Document Record
+  const totalExtractedCount =
+    normalizedTransactions.length +
+    normalizedObligations.length +
+    createdProducts.length +
+    createdPurchases.length;
+
   const documentRecordItem = {
     id: documentId,
     tenantId,
@@ -210,7 +422,7 @@ export const handler: Handler = async (event) => {
     fileType: key.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
     documentType: rawExtraction.documentType || 'BANK_STATEMENT',
     status: 'EXTRACTED',
-    extractedEntityCount: normalizedTransactions.length + normalizedObligations.length,
+    extractedEntityCount: totalExtractedCount,
     rawMetadata: JSON.stringify({
       bankOrIssuerName: rawExtraction.bankOrIssuerName,
       accountNumber: rawExtraction.accountNumber,
@@ -224,6 +436,9 @@ export const handler: Handler = async (event) => {
         totalOutflow: Math.round(totalOutflow * 100) / 100,
         transactionCount: normalizedTransactions.length,
         obligationCount: normalizedObligations.length,
+        productCount: createdProducts.length,
+        purchaseCount: createdPurchases.length,
+        cashSnapshotSaved,
       },
     }),
     processedAt: nowIso,
@@ -242,7 +457,7 @@ export const handler: Handler = async (event) => {
     );
   }
 
-  // Batch Write Transactions (chunks of 25 for DynamoDB limit)
+  // 7. Batch Write Transactions (chunks of 25 for DynamoDB limit)
   if (txnTableName && normalizedTransactions.length > 0) {
     console.log(`Writing ${normalizedTransactions.length} Transactions to DynamoDB in batches...`);
     for (let i = 0; i < normalizedTransactions.length; i += 25) {
@@ -259,7 +474,7 @@ export const handler: Handler = async (event) => {
     }
   }
 
-  // Batch Write Obligations if any
+  // 8. Batch Write Obligations if any
   if (oblTableName && normalizedObligations.length > 0) {
     console.log(`Writing ${normalizedObligations.length} Obligations to DynamoDB in batches...`);
     for (let i = 0; i < normalizedObligations.length; i += 25) {
@@ -276,11 +491,16 @@ export const handler: Handler = async (event) => {
     }
   }
 
-  // Update or record tenant's extraction summary anchor in DynamoDB DocumentRecord table
+  // 9. Update tenant's extraction summary anchor in DynamoDB DocumentRecord table
   if (docTableName && tenantId) {
     try {
       const summaryId = `latest-extraction#${tenantId}`;
-      console.log(`Updating latest extraction record (${summaryId}) for tenant ${tenantId}...`);
+      const statutorySum = normalizedObligations
+        .filter((o: any) => o.isStatutory)
+        .reduce((sum: number, o: any) => sum + (o.amount || 0), 0);
+      const currentLiquidBalance = effectiveCash ?? Math.max(0, totalInflow - totalOutflow);
+      const spendable = Math.max(0, currentLiquidBalance - statutorySum);
+
       await docClient.send(
         new PutCommand({
           TableName: docTableName,
@@ -292,24 +512,20 @@ export const handler: Handler = async (event) => {
             s3Key: key,
             fileName: `dashboard-snapshot-${tenantId}.json`,
             rawMetadata: JSON.stringify({
-              asOfDate: rawExtraction.statementPeriod?.endDate || nowIso.split('T')[0],
-              totalLiquidBalance: rawExtraction.closingBalance ?? rawExtraction.openingBalance ?? 82350,
-              spendableLiquidity: Math.max(0, (rawExtraction.closingBalance ?? 82350) - 25000),
-              statutoryLockbox: 25000,
+              asOfDate: normalizeDate(rawExtraction.statementPeriod?.endDate || rawExtraction.statementPeriod?.startDate),
+              totalLiquidBalance: currentLiquidBalance,
+              spendableLiquidity: spendable,
+              statutoryLockbox: statutorySum,
               statutoryBreakdown: {
-                gst: 14500,
-                tds: 4200,
-                pfEsic: 6300,
+                gst: normalizedObligations.filter((o: any) => o.category === 'GST_PAYMENT').reduce((sum: number, o: any) => sum + o.amount, 0),
+                tds: normalizedObligations.filter((o: any) => o.category === 'TDS_PAYMENT').reduce((sum: number, o: any) => sum + o.amount, 0),
+                pfEsic: normalizedObligations.filter((o: any) => o.title?.includes('EPFO') || o.title?.includes('ESIC')).reduce((sum: number, o: any) => sum + o.amount, 0),
                 advanceTax: 0,
               },
-              netDailyBurn: 3950,
-              daysToZero: Math.max(1, Math.floor((rawExtraction.closingBalance ?? 82350) / 3950)),
-              solvencyStatus: (rawExtraction.closingBalance ?? 82350) > 40000 ? 'Safe' : 'Warning',
-              liquidityStressRatio: 1.15,
-              inflowsNext15Days: Math.round(totalInflow * 100) / 100 || 95000,
-              commitmentsNext15Days: Math.round(totalOutflow * 100) / 100 || 165000,
+              inflowsNext15Days: Math.round(totalInflow * 100) / 100,
+              commitmentsNext15Days: Math.round(totalOutflow * 100) / 100,
               latestDocumentId: documentId,
-              extractedEntityCount: normalizedTransactions.length + normalizedObligations.length,
+              extractedEntityCount: totalExtractedCount,
               processedAt: nowIso,
             }),
             processedAt: nowIso,
@@ -338,6 +554,9 @@ export const handler: Handler = async (event) => {
     summary: {
       transactionCount: normalizedTransactions.length,
       obligationCount: normalizedObligations.length,
+      productCount: createdProducts.length,
+      purchaseCount: createdPurchases.length,
+      cashSnapshotSaved,
       totalInflow: Math.round(totalInflow * 100) / 100,
       totalOutflow: Math.round(totalOutflow * 100) / 100,
       openingBalance: rawExtraction.openingBalance ?? null,
@@ -345,6 +564,8 @@ export const handler: Handler = async (event) => {
     },
     normalizedTransactions,
     normalizedObligations,
+    createdProducts,
+    createdPurchases,
     processedAt: nowIso,
   };
 };
