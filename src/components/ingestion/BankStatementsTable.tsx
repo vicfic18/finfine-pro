@@ -1,17 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
-  FileSpreadsheet,
   Building2,
   CheckCircle2,
-  Clock,
   Search,
-  ExternalLink,
-  ChevronRight,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Filter,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { BankStatementDoc } from '@/app/api/ingestion/documents/route';
@@ -25,6 +19,7 @@ export default function BankStatementsTable({
   documents,
   onSelectDocument,
 }: BankStatementsTableProps) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedBank, setSelectedBank] = useState<string>('ALL');
 
@@ -49,14 +44,14 @@ export default function BankStatementsTable({
           <div className="flex items-center space-x-2">
             <Building2 size={18} className="text-neutral-900" />
             <h3 className="font-display font-bold text-lg text-neutral-900 tracking-tight">
-              Bank Statements Ingested
+              {t('ingestion.bankStatementsTableTitle')}
             </h3>
             <span className="px-2 py-0.5 text-[11px] font-bold bg-neutral-900 text-white font-mono">
               {filteredDocs.length}
             </span>
           </div>
           <p className="text-xs text-neutral-500 font-sans mt-0.5">
-            Statements processed through S3 raw storage, parsed for closing balances and normalized transactions.
+            {t('ingestion.subtitle')}
           </p>
         </div>
 
@@ -68,7 +63,7 @@ export default function BankStatementsTable({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search bank, account, or file..."
+              placeholder={t('ingestion.searchBankPlaceholder')}
               className="w-full pl-8 pr-3 py-1.5 bg-white border border-neutral-300 text-neutral-800 placeholder-neutral-400 focus:outline-neutral-900"
             />
           </div>
@@ -79,7 +74,7 @@ export default function BankStatementsTable({
               onChange={(e) => setSelectedBank(e.target.value)}
               className="py-1.5 px-2 bg-white border border-neutral-300 text-neutral-700 focus:outline-neutral-900"
             >
-              <option value="ALL">All Banks</option>
+              <option value="ALL">{t('ingestion.allBanks')}</option>
               {availableBanks.map((b) => (
                 <option key={b} value={b}>
                   {b}
@@ -95,21 +90,21 @@ export default function BankStatementsTable({
         <table className="w-full text-left font-sans text-xs">
           <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 uppercase tracking-wider text-[10px] font-semibold">
             <tr>
-              <th className="py-3 px-6">Banking Partner</th>
-              <th className="py-3 px-4">Statement Period</th>
-              <th className="py-3 px-4 text-right">Balance Range</th>
-              <th className="py-3 px-4 text-right">Volume (Credits / Debits)</th>
-              <th className="py-3 px-4 text-center">Extraction</th>
-              <th className="py-3 px-4 text-center">Reconciliation</th>
-              <th className="py-3 px-4">Processed Date</th>
-              <th className="py-3 px-6 text-right">Action</th>
+              <th className="py-3 px-6">{t('ingestion.bankingPartner')}</th>
+              <th className="py-3 px-4">{t('ingestion.statementPeriod')}</th>
+              <th className="py-3 px-4 text-right">{t('ingestion.balanceRange')}</th>
+              <th className="py-3 px-4 text-right">{t('ingestion.volume')}</th>
+              <th className="py-3 px-4 text-center">{t('ingestion.statusHeader')}</th>
+              <th className="py-3 px-4 text-center">{t('ingestion.reconciliationHeader')}</th>
+              <th className="py-3 px-4">{t('ingestion.processedDateHeader')}</th>
+              <th className="py-3 px-6 text-right">{t('ingestion.actionHeader')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {filteredDocs.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-10 text-center text-neutral-400">
-                  No bank statements match the active search filter.
+                  {t('ingestion.noBankMatch')}
                 </td>
               </tr>
             ) : (
@@ -169,7 +164,7 @@ export default function BankStatementsTable({
                     </span>
                   </td>
 
-                  {/* Extraction Status */}
+                  {/* Processing Status */}
                   <td className="py-4 px-4 text-center">
                     <span
                       className={clsx(
@@ -180,7 +175,7 @@ export default function BankStatementsTable({
                       )}
                     >
                       <CheckCircle2 size={11} className="text-emerald-600" />
-                      <span>{doc.status}</span>
+                      <span>{doc.status === 'EXTRACTED' ? 'Processed' : doc.status}</span>
                     </span>
                   </td>
 
@@ -208,9 +203,9 @@ export default function BankStatementsTable({
                         e.stopPropagation();
                         onSelectDocument(doc);
                       }}
-                      className="px-3 py-1.5 font-semibold text-[11px] bg-white border border-neutral-300 hover:bg-neutral-900 hover:text-white transition-colors"
+                      className="px-3 py-1.5 font-semibold text-[11px] bg-white border border-neutral-300 hover:bg-neutral-900 hover:text-white transition-colors cursor-pointer"
                     >
-                      Inspect
+                      {t('ingestion.inspectBtn')}
                     </button>
                   </td>
                 </tr>

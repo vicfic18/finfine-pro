@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import ConfigureAmplifyClientSide from "@/components/ConfigureAmplify";
+import I18nProvider from "@/components/I18nProvider";
 
 const cirka = localFont({
   src: [
@@ -51,8 +52,11 @@ export default function RootLayout({
     <html lang="en" className={`${cirka.variable} ${gilroy.variable} bg-white`}>
       <body className="bg-[#FFFFFF] text-[#111215] font-sans antialiased selection:bg-black selection:text-white min-h-screen">
         <ConfigureAmplifyClientSide />
-        {children}
+        <I18nProvider>
+          {children}
+        </I18nProvider>
       </body>
     </html>
   );
 }
+

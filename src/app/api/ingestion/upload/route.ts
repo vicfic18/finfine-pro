@@ -367,8 +367,8 @@ export async function POST(request: Request) {
         documentType: docType,
         message:
           docType === 'BANK_STATEMENT'
-            ? `Successfully uploaded to S3 and normalized bank statement into DynamoDB ledger.`
-            : `Successfully uploaded bill to S3 and persisted canonical obligation records.`,
+            ? `Successfully processed and recorded bank statement transactions.`
+            : `Successfully processed and recorded bill/invoice.`,
         pipelineSummary: result.pipelineResult?.summary || null,
       });
     }

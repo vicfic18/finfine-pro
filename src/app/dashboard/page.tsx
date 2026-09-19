@@ -1,14 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import TopRibbon from '@/components/dashboard/TopRibbon';
 import ForecastingCharts from '@/components/dashboard/ForecastingCharts';
 import RiskCalendar from '@/components/dashboard/RiskCalendar';
 import ScenarioSimulator from '@/components/dashboard/ScenarioSimulator';
 import TaxChecksWidget from '@/components/dashboard/TaxChecksWidget';
+import LanguageSelector from '@/components/ui/LanguageSelector';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 export default function DashboardPage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<FinancialMetricData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -47,7 +50,7 @@ export default function DashboardPage() {
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-sans bg-white">
         <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent animate-spin" />
         <div className="text-xs uppercase tracking-widest font-semibold text-neutral-500">
-          Loading Financial Records...
+          {t('common.loading', 'Loading Financial Records...')}
         </div>
       </div>
     );
@@ -57,14 +60,21 @@ export default function DashboardPage() {
     <div className="flex flex-col max-w-7xl mx-auto w-full font-sans bg-white border border-neutral-200 divide-y divide-neutral-200">
       
       {/* 1. Header: FinFine Pro & Dynamic Business Name */}
-      <header className="p-6 sm:p-8 bg-white">
-        <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
-          FinFine Pro
+      <header className="p-6 sm:p-8 bg-white flex items-start justify-between">
+        <div>
+          <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
+            {t('common.appName', 'FinFine Pro')}
+          </div>
+          <h1 className="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-neutral-900 tracking-tight leading-none">
+            {data.businessName || 'My Business'}
+          </h1>
         </div>
-        <h1 className="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-neutral-900 tracking-tight leading-none">
-          {data.businessName || 'My Business'}
-        </h1>
+
+        <div className="sm:hidden">
+          <LanguageSelector variant="compact" />
+        </div>
       </header>
+
 
       {/* 2. Primary Solvency Ribbon */}
       <section aria-label="Solvency Ribbon">

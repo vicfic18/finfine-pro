@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 interface TaxChecksWidgetProps {
@@ -8,6 +9,7 @@ interface TaxChecksWidgetProps {
 }
 
 export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
+  const { t } = useTranslation();
   const { statutoryCompliance, statutoryLockbox } = data;
 
   return (
@@ -17,15 +19,15 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
       <div className="p-4 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
         <div>
           <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block mb-1">
-            Statutory
+            {t('taxChecks.statutory', 'Statutory')}
           </span>
           <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            Tax Checks
+            {t('taxChecks.title', 'Tax Checks')}
           </h2>
         </div>
 
         <div className="flex items-center space-x-2 text-xs">
-          <span className="text-neutral-500">Tax Lockbox Reserved:</span>
+          <span className="text-neutral-500">{t('taxChecks.taxLockboxReserved', 'Tax Lockbox Reserved:')}</span>
           <span className="font-display font-bold text-base text-neutral-900">
             ₹{statutoryLockbox.toLocaleString('en-IN')}
           </span>
@@ -35,7 +37,7 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
       {/* Statutory Items Grid or Empty State */}
       {statutoryCompliance.length === 0 ? (
         <div className="p-6 text-center text-xs text-neutral-500 bg-white">
-          No pending statutory tax obligations recorded. Upload tax challans or GST invoices in Documents to track them here.
+          {t('taxChecks.noObligations', 'No pending statutory tax obligations recorded. Upload tax challans or GST invoices in Documents to track them here.')}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200 w-full bg-white">
@@ -50,7 +52,9 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
                   </div>
 
                   <div className="mt-3">
-                    <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">Due Amount</span>
+                    <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">
+                      {t('taxChecks.dueAmount', 'Due Amount')}
+                    </span>
                     <div className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 mt-0.5">
                       ₹{tax.amountDue.toLocaleString('en-IN')}
                     </div>
@@ -59,13 +63,13 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
 
                 <div className="space-y-1 text-xs pt-3 border-t border-neutral-100">
                   <div className="flex justify-between items-center">
-                    <span className="text-neutral-500 text-[11px]">Countdown:</span>
+                    <span className="text-neutral-500 text-[11px]">{t('taxChecks.countdown', 'Countdown:')}</span>
                     <span className={`text-xs font-bold ${isUrgent ? 'text-orange-600' : 'text-neutral-900'}`}>
-                      {tax.daysLeft === 0 ? 'DUE TODAY' : `${tax.daysLeft} days left`}
+                      {tax.daysLeft === 0 ? t('taxChecks.dueToday', 'DUE TODAY') : t('taxChecks.daysLeft', { days: tax.daysLeft, defaultValue: `${tax.daysLeft} days left` })}
                     </span>
                   </div>
                   <div className="text-[11px] text-neutral-400 truncate" title={tax.penaltyIfMissedDaily}>
-                    Penalty: {tax.penaltyIfMissedDaily}
+                    {t('taxChecks.penalty', 'Penalty:')} {tax.penaltyIfMissedDaily}
                   </div>
                 </div>
               </div>
@@ -77,3 +81,4 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
     </div>
   );
 }
+

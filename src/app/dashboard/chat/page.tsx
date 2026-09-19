@@ -4,6 +4,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { ArrowUp, MessageSquare, PanelLeft, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChatMessage, type ChatMessageData } from '@/components/prompt-kit/message';
 import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
 import { ThinkingBar } from '@/components/prompt-kit/thinking-bar';
@@ -11,13 +12,6 @@ import { isUuid, type ConversationListResponse, type ConversationResponse, type 
 
 const MAX_MESSAGES = 100;
 const MAX_PROMPT_LENGTH = 4_000;
-
-const STARTER_PROMPTS = [
-  'Will I have enough money to pay staff on the 10th?',
-  'What happens if I delay Sharma Textiles by 5 days?',
-  'How much GST do I owe on October 20th?',
-  'Draft a WhatsApp message to collect from Royal Traders',
-];
 
 type ChatResponse = {
   status?: string;
@@ -72,22 +66,24 @@ function HistoryList({ conversations, selectedId, deletingId, loading, onOpen, o
   onNew: () => void;
   onClose?: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-neutral-50">
       <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-3">
-        <span className="text-xs font-bold uppercase tracking-[0.16em] text-neutral-500">Chats</span>
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-neutral-500">{t('chat.chats')}</span>
         {onClose && (
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900" aria-label="Close chat history"><X size={17} /></button>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900" aria-label={t('chat.closeHistory')}><X size={17} /></button>
         )}
       </div>
       <div className="p-3">
-        <button type="button" onClick={onNew} className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-neutral-700"><Plus size={15} /> New chat</button>
+        <button type="button" onClick={onNew} className="flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-neutral-700"><Plus size={15} /> {t('chat.newChat')}</button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 custom-scrollbar">
         {loading ? (
-          <p className="px-2 py-4 text-xs text-neutral-400">Loading conversations…</p>
+          <p className="px-2 py-4 text-xs text-neutral-400">{t('chat.loadingConversations')}</p>
         ) : conversations.length === 0 ? (
-          <p className="px-2 py-4 text-xs leading-5 text-neutral-400">Your completed conversations will appear here.</p>
+          <p className="px-2 py-4 text-xs leading-5 text-neutral-400">{t('chat.emptyHistory')}</p>
         ) : conversations.map((conversation) => {
           const selected = conversation.sessionId === selectedId;
           return (
@@ -106,6 +102,7 @@ function HistoryList({ conversations, selectedId, deletingId, loading, onOpen, o
 }
 
 function ChatboxContent() {
+  const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawConversationId = searchParams.get('conversation');
@@ -124,6 +121,13 @@ function ChatboxContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const starterPrompts = [
+    t('chat.starter1'),
+    t('chat.starter2'),
+    t('chat.starter3'),
+    t('chat.starter4'),
+  ];
 
   const hasConversation = messages.length > 0;
   const showStarters = !hasConversation && !isConversationLoading;
@@ -248,8 +252,8 @@ function ChatboxContent() {
     activeRequestIdRef.current = null;
     abortControllerRef.current?.abort();
     setIsPending(false);
-    setMessages((current) => current.map((message) => message.requestId === activeRequestId && message.role === 'assistant' ? { ...message, content: 'Request cancelled.', status: 'cancelled' } : message));
-  }, []);
+    setMessages((current) => current.map((message) => message.requestId === activeRequestId && message.role === 'assistant' ? { ...message, content: t('chat.requestCancelled'), status: 'cancelled' } : message));
+  }, [t]);
 
   const startNewChat = useCallback(() => {
     stopRequest();
@@ -269,7 +273,7 @@ function ChatboxContent() {
   }, [router, stopRequest]);
 
   const deleteConversation = useCallback(async (conversation: ConversationSummary) => {
-    if (!window.confirm(`Delete “${conversation.title}”? This cannot be undone.`)) return;
+    if (!window.confirm(t('chat.deleteConfirm', { title: conversation.title }))) return;
     setDeletingId(conversation.sessionId);
     try {
       const response = await authenticatedFetch(`/api/chat/${encodeURIComponent(conversation.sessionId)}`, { method: 'DELETE' });
@@ -287,7 +291,7 @@ function ChatboxContent() {
     } finally {
       setDeletingId(null);
     }
-  }, [router, sessionId]);
+  }, [router, sessionId, t]);
 
   const historyProps = { conversations, selectedId: sessionId, deletingId, loading: isHistoryLoading, onOpen: openConversation, onDelete: deleteConversation, onNew: startNewChat };
 
@@ -295,36 +299,36 @@ function ChatboxContent() {
     <div className="relative mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-7xl overflow-hidden border border-neutral-200 bg-white font-sans sm:min-h-[calc(100vh-5rem)] sm:rounded-2xl">
       <aside className="hidden w-64 shrink-0 border-r border-neutral-200 sm:block"><HistoryList {...historyProps} /></aside>
       {historyOpen && (
-        <div className="fixed inset-0 z-[60] flex bg-black/25 sm:hidden" role="dialog" aria-modal="true" aria-label="Chat history">
+        <div className="fixed inset-0 z-[60] flex bg-black/25 sm:hidden" role="dialog" aria-modal="true" aria-label={t('chat.chats')}>
           <aside className="h-full w-[min(86vw,20rem)] border-r border-neutral-200 shadow-2xl"><HistoryList {...historyProps} onClose={() => setHistoryOpen(false)} /></aside>
-          <button type="button" className="flex-1" onClick={() => setHistoryOpen(false)} aria-label="Close chat history" />
+          <button type="button" className="flex-1" onClick={() => setHistoryOpen(false)} aria-label={t('chat.closeHistory')} />
         </div>
       )}
       <section className="flex min-w-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">
         <header className="flex items-center justify-between gap-3 border-b border-neutral-200 pb-4">
           <div className="flex min-w-0 items-center gap-2.5">
-            <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-neutral-200 p-2 text-neutral-600 sm:hidden" aria-label="Open chat history"><PanelLeft size={17} /></button>
+            <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-neutral-200 p-2 text-neutral-600 sm:hidden" aria-label={t('chat.openHistory')}><PanelLeft size={17} /></button>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="truncate font-display text-xl font-bold tracking-tight text-neutral-900 sm:text-2xl">FinFine Financial Assistant</h1>
-                <span className="hidden rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 md:inline">Online</span>
+                <h1 className="truncate font-display text-xl font-bold tracking-tight text-neutral-900 sm:text-2xl">{t('chat.assistantTitle')}</h1>
+                <span className="hidden rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 md:inline">{t('chat.online')}</span>
               </div>
-              <p className="mt-0.5 hidden text-xs text-neutral-500 md:block">Ask about your cash, taxes, invoices, or vendor obligations.</p>
+              <p className="mt-0.5 hidden text-xs text-neutral-500 md:block">{t('chat.assistantSubtitle')}</p>
             </div>
           </div>
-          <button type="button" onClick={startNewChat} disabled={!hasConversation && !sessionId} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-600 transition hover:border-neutral-400 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40" aria-label="Start a new chat"><Plus size={14} /> <span className="hidden sm:inline">New chat</span></button>
+          <button type="button" onClick={startNewChat} disabled={!hasConversation && !sessionId} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-600 transition hover:border-neutral-400 hover:text-neutral-950 disabled:cursor-not-allowed disabled:opacity-40" aria-label={t('chat.newChat')}><Plus size={14} /> <span className="hidden sm:inline">{t('chat.newChat')}</span></button>
         </header>
         <div className="flex flex-1 flex-col py-5">
           {loadError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-xs text-red-800" role="alert">{loadError}</div>}
           {isConversationLoading ? (
-            <div className="flex flex-1 items-center justify-center text-xs text-neutral-400">Loading conversation…</div>
+            <div className="flex flex-1 items-center justify-center text-xs text-neutral-400">{t('chat.loadingConversations')}</div>
           ) : showStarters ? (
             <div className="flex flex-1 flex-col items-center justify-center px-2 py-8 text-center">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50 text-neutral-700 shadow-sm"><MessageSquare size={26} strokeWidth={1.7} /></div>
-              <h2 className="font-display text-xl font-bold text-neutral-900">How can I help your business today?</h2>
-              <p className="mt-2 max-w-lg text-xs leading-relaxed text-neutral-500">FinFine can use your verified financial records to answer practical questions. Ask in English, Hindi, or Hinglish.</p>
+              <h2 className="font-display text-xl font-bold text-neutral-900">{t('chat.howCanIHelp')}</h2>
+              <p className="mt-2 max-w-lg text-xs leading-relaxed text-neutral-500">{t('chat.chatIntro')}</p>
               <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-2.5 text-left sm:grid-cols-2">
-                {STARTER_PROMPTS.map((prompt) => (
+                {starterPrompts.map((prompt) => (
                   <button key={prompt} type="button" onClick={() => void sendMessage(prompt)} disabled={!isHydrated || isPending} className="group flex items-center justify-between rounded-xl border border-neutral-200/80 bg-white p-3 text-xs font-medium text-neutral-700 transition hover:border-neutral-900 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50"><span>{prompt}</span><Sparkles size={13} className="ml-2 shrink-0 text-neutral-400 transition group-hover:text-amber-500" /></button>
                 ))}
               </div>
@@ -334,16 +338,16 @@ function ChatboxContent() {
           )}
           <div className="mt-auto pt-6">
             {sessionUnavailable && (
-              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900" role="alert"><span>This conversation is no longer available.</span><button type="button" onClick={startNewChat} className="shrink-0 font-semibold underline underline-offset-2">Start a new chat</button></div>
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900" role="alert"><span>{t('chat.sessionUnavailable')}</span><button type="button" onClick={startNewChat} className="shrink-0 font-semibold underline underline-offset-2">{t('chat.newChat')}</button></div>
             )}
             {isPending && <ThinkingBar onStop={stopRequest} />}
             <PromptInput value={draft} onValueChange={setDraft} onSubmit={() => void sendMessage(draft)} disabled={!isHydrated || isPending || isConversationLoading}>
-              <PromptInputTextarea placeholder="Ask about your cash, taxes, invoices, or obligations…" maxLength={MAX_PROMPT_LENGTH} />
+              <PromptInputTextarea placeholder={t('chat.inputPlaceholder')} maxLength={MAX_PROMPT_LENGTH} />
               <PromptInputActions className="justify-end">
-                <PromptInputAction tooltip="Send message"><button type="button" onClick={() => void sendMessage(draft)} disabled={!isHydrated || isPending || !draft.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400" aria-label="Send message"><ArrowUp size={17} strokeWidth={2.2} /></button></PromptInputAction>
+                <PromptInputAction tooltip={t('chat.sendMessageTooltip')}><button type="button" onClick={() => void sendMessage(draft)} disabled={!isHydrated || isPending || !draft.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400" aria-label={t('chat.sendMessageTooltip')}><ArrowUp size={17} strokeWidth={2.2} /></button></PromptInputAction>
               </PromptInputActions>
             </PromptInput>
-            {latestAssistant?.status === 'complete' && <p className="mt-2 text-center text-[10px] text-neutral-400">FinFine answers are based on the records available to your workspace.</p>}
+            {latestAssistant?.status === 'complete' && <p className="mt-2 text-center text-[10px] text-neutral-400">{t('chat.footerNotice')}</p>}
           </div>
         </div>
       </section>
@@ -352,5 +356,6 @@ function ChatboxContent() {
 }
 
 export default function ChatboxPage() {
-  return <Suspense fallback={<div className="flex min-h-[calc(100vh-9rem)] items-center justify-center text-xs text-neutral-400 sm:min-h-[calc(100vh-5rem)]">Loading chat…</div>}><ChatboxContent /></Suspense>;
+  const { t } = useTranslation();
+  return <Suspense fallback={<div className="flex min-h-[calc(100vh-9rem)] items-center justify-center text-xs text-neutral-400 sm:min-h-[calc(100vh-5rem)]">{t('chat.loadingChat')}</div>}><ChatboxContent /></Suspense>;
 }

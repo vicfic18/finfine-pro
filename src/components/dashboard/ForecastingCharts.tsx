@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -25,6 +26,7 @@ export default function ForecastingCharts({
   simulatedExpense = 0,
   simulatedDelay = 0,
 }: ForecastingChartsProps) {
+  const { t } = useTranslation();
   const trajectory = Array.isArray(data?.trajectory60Days) ? data.trajectory60Days : [];
   const [selectedDay, setSelectedDay] = useState<any | null>(
     trajectory[3] || trajectory[0] || null
@@ -61,10 +63,10 @@ export default function ForecastingCharts({
       {/* Header Cell */}
       <div className="p-4 sm:p-6 bg-white">
         <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block mb-1">
-          Projection • 60-Day Horizon
+          {t('charts.projectionHorizon', 'Projection • 60-Day Horizon')}
         </span>
         <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-          Cash Flow Trajectory
+          {t('charts.cashFlowTrajectory', 'Cash Flow Trajectory')}
         </h2>
       </div>
 
@@ -75,20 +77,26 @@ export default function ForecastingCharts({
           <div className="flex items-center space-x-5">
             <div className="flex items-center space-x-2">
               <span className="w-3 h-0.5 bg-neutral-900 inline-block" />
-              <span className="text-neutral-700 font-medium">Expected Balance</span>
+              <span className="text-neutral-700 font-medium">
+                {t('charts.expectedBalance', 'Expected Balance')}
+              </span>
             </div>
             <div className="flex items-center space-x-2">
               <span className="w-3 h-3 bg-neutral-200 inline-block" />
-              <span className="text-neutral-500">Confidence Band</span>
+              <span className="text-neutral-500">
+                {t('charts.confidenceBand', 'Confidence Band')}
+              </span>
             </div>
             <div className="flex items-center space-x-2">
               <span className="w-3 h-0.5 bg-orange-500 border-t border-dashed border-orange-500 inline-block" />
-              <span className="text-orange-600 font-medium">Zero-Cash Danger Line</span>
+              <span className="text-orange-600 font-medium">
+                {t('charts.zeroCashDangerLine', 'Zero-Cash Danger Line')}
+              </span>
             </div>
           </div>
 
           <div className="text-[11px] text-neutral-400">
-            Click any point to inspect that day&apos;s cash flow
+            {t('charts.clickPointHint', "Click any point to inspect that day's cash flow")}
           </div>
         </div>
 
@@ -128,23 +136,23 @@ export default function ForecastingCharts({
                     return (
                       <div className="bg-neutral-900 text-white p-3 border border-neutral-700 text-xs font-sans max-w-xs">
                         <div className="flex items-center justify-between font-bold pb-1.5 border-b border-neutral-800">
-                          <span>{d.date} (Day {d.day})</span>
+                          <span>{d.date} ({t('charts.day', 'Day')} {d.day})</span>
                           <span className={d.baseBalance < 0 ? 'text-orange-400' : 'text-emerald-400 font-display'}>
                             ₹{d.baseBalance.toLocaleString('en-IN')}
                           </span>
                         </div>
                         <div className="mt-2 space-y-1 text-[11px]">
                           <div className="flex justify-between text-neutral-300">
-                            <span>Inflows:</span>
+                            <span>{t('common.inflows', 'Inflows')}:</span>
                             <span className="text-emerald-400 font-medium">+₹{d.inflow.toLocaleString('en-IN')}</span>
                           </div>
                           <div className="flex justify-between text-neutral-300">
-                            <span>Outflows:</span>
+                            <span>{t('common.outflows', 'Outflows')}:</span>
                             <span className="text-orange-400 font-medium">-₹{d.outflow.toLocaleString('en-IN')}</span>
                           </div>
                           {d.events && d.events.length > 0 && (
                             <div className="pt-1.5 border-t border-neutral-800 text-[10px] text-amber-300">
-                              📌 Key Events: {d.events.join(', ')}
+                              📌 {t('charts.keyEvents', 'Key Events:')} {d.events.join(', ')}
                             </div>
                           )}
                         </div>
@@ -161,7 +169,7 @@ export default function ForecastingCharts({
                 strokeDasharray="4 4"
                 strokeWidth={1.5}
                 label={{
-                  value: 'Zero Balance Line',
+                  value: t('charts.zeroBalanceLineLabel', 'Zero Balance Line'),
                   fill: '#ea580c',
                   fontSize: 10,
                   position: 'insideTopLeft',
@@ -202,21 +210,23 @@ export default function ForecastingCharts({
           <div>
             <div className="flex items-center space-x-3">
               <span className="font-bold text-sm text-neutral-900">
-                Day {selectedDay.day}: {selectedDay.date}
+                {t('charts.day', 'Day')} {selectedDay.day}: {selectedDay.date}
               </span>
               <span className="text-xs font-semibold text-neutral-700">
-                Balance: ₹{selectedDay.baseBalance.toLocaleString('en-IN')}
+                {t('common.status', 'Balance')}: ₹{selectedDay.baseBalance.toLocaleString('en-IN')}
               </span>
             </div>
             <p className="text-xs text-neutral-600 mt-1">
               {selectedDay.events && selectedDay.events.length > 0
-                ? `Scheduled: ${selectedDay.events.join(', ')}`
-                : `Operations (In: ₹${selectedDay.inflow.toLocaleString('en-IN')}, Out: ₹${selectedDay.outflow.toLocaleString('en-IN')})`}
+                ? `${t('charts.scheduled', 'Scheduled:')} ${selectedDay.events.join(', ')}`
+                : `${t('charts.operations', 'Operations')} (${t('common.inflow', 'In')}: ₹${selectedDay.inflow.toLocaleString('en-IN')}, ${t('common.outflow', 'Out')}: ₹${selectedDay.outflow.toLocaleString('en-IN')})`}
             </p>
           </div>
 
           <div className="text-right sm:self-center shrink-0">
-            <span className="text-[11px] text-neutral-400 block uppercase tracking-wider font-medium">Daily Net Delta</span>
+            <span className="text-[11px] text-neutral-400 block uppercase tracking-wider font-medium">
+              {t('charts.dailyNetDelta', 'Daily Net Delta')}
+            </span>
             <span className={`text-xl font-bold font-display ${selectedDay.netDelta >= 0 ? 'text-emerald-600' : 'text-orange-600'}`}>
               {selectedDay.netDelta >= 0 ? '+' : ''}₹{selectedDay.netDelta.toLocaleString('en-IN')}
             </span>
@@ -227,3 +237,4 @@ export default function ForecastingCharts({
     </div>
   );
 }
+

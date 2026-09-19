@@ -1,16 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Receipt,
   Search,
-  CheckCircle2,
-  AlertTriangle,
   ArrowUpRight,
   ArrowDownLeft,
   ShieldCheck,
-  Tag,
-  Filter,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { BillInvoiceDoc } from '@/app/api/ingestion/documents/route';
@@ -24,6 +21,7 @@ export default function BillsInvoicesTable({
   documents,
   onSelectDocument,
 }: BillsInvoicesTableProps) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'VENDOR' | 'CUSTOMER' | 'TAX_AUTHORITY'>('ALL');
 
@@ -47,14 +45,14 @@ export default function BillsInvoicesTable({
           <div className="flex items-center space-x-2">
             <Receipt size={18} className="text-neutral-900" />
             <h3 className="font-display font-bold text-lg text-neutral-900 tracking-tight">
-              External Bills & Invoices
+              {t('ingestion.billsInvoicesTableTitle')}
             </h3>
             <span className="px-2 py-0.5 text-[11px] font-bold bg-neutral-900 text-white font-mono">
               {filteredDocs.length}
             </span>
           </div>
           <p className="text-xs text-neutral-500 font-sans mt-0.5">
-            Vendor purchase bills, customer invoices, and statutory challans linked to bank transactions.
+            {t('ingestion.subtitle')}
           </p>
         </div>
 
@@ -66,7 +64,7 @@ export default function BillsInvoicesTable({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search vendor, invoice #, GSTIN..."
+              placeholder={t('ingestion.searchInvoicePlaceholder')}
               className="w-full pl-8 pr-3 py-1.5 bg-white border border-neutral-300 text-neutral-800 placeholder-neutral-400 focus:outline-neutral-900"
             />
           </div>
@@ -76,7 +74,7 @@ export default function BillsInvoicesTable({
             onChange={(e) => setTypeFilter(e.target.value as any)}
             className="py-1.5 px-2 bg-white border border-neutral-300 text-neutral-700 focus:outline-neutral-900"
           >
-            <option value="ALL">All Document Types</option>
+            <option value="ALL">{t('ingestion.allStatuses')}</option>
             <option value="VENDOR">Vendor Bills (Payable)</option>
             <option value="CUSTOMER">Customer Invoices (Receivable)</option>
             <option value="TAX_AUTHORITY">Tax Challans (Statutory)</option>
@@ -89,28 +87,27 @@ export default function BillsInvoicesTable({
         <table className="w-full text-left font-sans text-xs">
           <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 uppercase tracking-wider text-[10px] font-semibold">
             <tr>
-              <th className="py-3 px-6">Invoice # & Document</th>
-              <th className="py-3 px-4">Counterparty</th>
-              <th className="py-3 px-4">Classification</th>
+              <th className="py-3 px-6">{t('ingestion.invoiceNumber')}</th>
+              <th className="py-3 px-4">{t('ingestion.counterparty')}</th>
+              <th className="py-3 px-4">{t('ingestion.statusHeader')}</th>
               <th className="py-3 px-4">GSTIN / Tax ID</th>
-              <th className="py-3 px-4">Dates</th>
-              <th className="py-3 px-4 text-right">Amount</th>
-              <th className="py-3 px-4">Bank Reconciliation Match</th>
-              <th className="py-3 px-6 text-right">Action</th>
+              <th className="py-3 px-4">{t('ingestion.dueDate')}</th>
+              <th className="py-3 px-4 text-right">{t('topRibbon.spendableCash')}</th>
+              <th className="py-3 px-4">{t('ingestion.reconciliationHeader')}</th>
+              <th className="py-3 px-6 text-right">{t('ingestion.actionHeader')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {filteredDocs.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-10 text-center text-neutral-400">
-                  No invoices or bills match the active search filter.
+                  {t('ingestion.noInvoiceMatch')}
                 </td>
               </tr>
             ) : (
               filteredDocs.map((doc) => {
                 const isCustomer = doc.counterpartyType === 'CUSTOMER';
                 const isVendor = doc.counterpartyType === 'VENDOR';
-                const isTax = doc.counterpartyType === 'TAX_AUTHORITY';
 
                 return (
                   <tr
@@ -221,9 +218,9 @@ export default function BillsInvoicesTable({
                           e.stopPropagation();
                           onSelectDocument(doc);
                         }}
-                        className="px-3 py-1.5 font-semibold text-[11px] bg-white border border-neutral-300 hover:bg-neutral-900 hover:text-white transition-colors"
+                        className="px-3 py-1.5 font-semibold text-[11px] bg-white border border-neutral-300 hover:bg-neutral-900 hover:text-white transition-colors cursor-pointer"
                       >
-                        Inspect
+                        {t('ingestion.inspectBtn')}
                       </button>
                     </td>
                   </tr>

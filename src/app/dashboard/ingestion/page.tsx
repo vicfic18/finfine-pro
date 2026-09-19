@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import DocumentUploadZone from '@/components/ingestion/DocumentUploadZone';
 import BankStatementsTable from '@/components/ingestion/BankStatementsTable';
 import BillsInvoicesTable from '@/components/ingestion/BillsInvoicesTable';
@@ -11,6 +12,7 @@ import clsx from 'clsx';
 import type { BankStatementDoc, BillInvoiceDoc } from '@/app/api/ingestion/documents/route';
 
 export default function IngestionPage() {
+  const { t } = useTranslation();
   const [bankStatements, setBankStatements] = useState<BankStatementDoc[]>([]);
   const [billsAndInvoices, setBillsAndInvoices] = useState<BillInvoiceDoc[]>([]);
   const [businessName, setBusinessName] = useState<string>('My Business');
@@ -55,13 +57,13 @@ export default function IngestionPage() {
       <header className="pt-2 pb-6 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <span className="text-xs font-semibold uppercase tracking-widest text-neutral-400 block mb-1">
-            Documents
+            {t('nav.documents')}
           </span>
           <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight">
-            Document Ingestion
+            {t('ingestion.title')}
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 mt-1 max-w-2xl font-sans">
-            Upload bank statements, invoices, and statutory challans to feed your live cash calculations.
+            {t('ingestion.subtitle')}
           </p>
         </div>
 
@@ -69,10 +71,10 @@ export default function IngestionPage() {
           <button
             onClick={() => fetchDocuments(true)}
             disabled={refreshing}
-            className="px-3.5 py-2 text-xs font-semibold bg-white border border-neutral-300 hover:bg-neutral-100 flex items-center space-x-1.5 transition-colors text-neutral-700"
+            className="px-3.5 py-2 text-xs font-semibold bg-white border border-neutral-300 hover:bg-neutral-100 flex items-center space-x-1.5 transition-colors text-neutral-700 cursor-pointer"
           >
             <RefreshCw size={13} className={clsx(refreshing && "animate-spin text-neutral-900")} />
-            <span>{refreshing ? 'Syncing...' : 'Refresh Records'}</span>
+            <span>{refreshing ? t('ingestion.syncing') : t('ingestion.refreshRecords')}</span>
           </button>
         </div>
       </header>
@@ -90,14 +92,14 @@ export default function IngestionPage() {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-                Treasury
+                {t('ingestion.treasury')}
               </span>
               <h2 className="font-display font-bold text-xl sm:text-2xl text-neutral-900 tracking-tight">
-                Bank Statements
+                {t('ingestion.bankStatementsTableTitle')}
               </h2>
             </div>
             <span className="text-xs text-neutral-500 font-sans">
-              Reconciled payment rails
+              {t('ingestion.searchBankPlaceholder')}
             </span>
           </div>
 
@@ -112,14 +114,14 @@ export default function IngestionPage() {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-                Trade
+                {t('ingestion.trade')}
               </span>
               <h2 className="font-display font-bold text-xl sm:text-2xl text-neutral-900 tracking-tight">
-                Bills and Invoices
+                {t('ingestion.billsInvoicesTableTitle')}
               </h2>
             </div>
             <span className="text-xs text-neutral-500 font-sans">
-              Payables and receivables
+              {t('ingestion.searchInvoicePlaceholder')}
             </span>
           </div>
 

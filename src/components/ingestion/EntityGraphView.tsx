@@ -422,8 +422,8 @@ export default function EntityGraphView({
               </div>
 
               <div className="pt-3 border-t border-neutral-100 text-[10px] text-neutral-400 flex items-center justify-between">
-                <span>React Flow Graph Engine</span>
-                <span className="font-mono">{totalEntities + 1} Nodes</span>
+                <span>Financial Entity Network</span>
+                <span className="font-mono">{totalEntities + 1} Connected Entities</span>
               </div>
             </div>
           </div>

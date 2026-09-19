@@ -1,19 +1,11 @@
 'use client';
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   X,
   FileSpreadsheet,
-  FileText,
-  Building2,
-  Calendar,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowDownLeft,
-  ArrowUpRight,
-  ExternalLink,
   Receipt,
-  FileCode,
 } from 'lucide-react';
 import type { BankStatementDoc, BillInvoiceDoc } from '@/app/api/ingestion/documents/route';
 
@@ -23,6 +15,7 @@ interface DocumentDetailModalProps {
 }
 
 export default function DocumentDetailModal({ document, onClose }: DocumentDetailModalProps) {
+  const { t } = useTranslation();
   if (!document) return null;
 
   const isBankStatement = document.documentType === 'BANK_STATEMENT';
@@ -35,8 +28,8 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100"
-          title="Close modal"
+          className="absolute top-5 right-5 p-2 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 cursor-pointer"
+          title={t('common.cancel')}
         >
           <X size={20} />
         </button>
@@ -48,7 +41,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
           </div>
           <div>
             <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-              {isBankStatement ? 'Bank Statement Record' : 'External Bill / Invoice Record'}
+              {isBankStatement ? t('ingestion.modalTitleBank') : t('ingestion.modalTitleInvoice')}
             </span>
             <h3 className="font-display font-bold text-xl sm:text-2xl text-neutral-900 leading-tight">
               {document.fileName}
@@ -57,7 +50,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
         </div>
 
         <p className="text-xs text-neutral-500 font-mono mb-6">
-          Document ID: {document.id} • Tenant: {document.tenantId}
+          Document ID: {document.id}
         </p>
 
         {/* Bank Statement Specifics */}
@@ -67,7 +60,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-neutral-50 border border-neutral-200">
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Banking Partner
+                  {t('ingestion.bankingPartner')}
                 </span>
                 <span className="font-bold text-neutral-900 text-sm">
                   {(document as BankStatementDoc).bankName}
@@ -78,7 +71,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Statement Period
+                  {t('ingestion.statementPeriod')}
                 </span>
                 <span className="font-semibold text-neutral-800 text-xs block">
                   {(document as BankStatementDoc).statementPeriod.startDate}
@@ -89,7 +82,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Opening Balance
+                  {t('ingestion.openingBalance')}
                 </span>
                 <span className="font-bold text-neutral-900 text-sm font-mono">
                   ₹{(document as BankStatementDoc).openingBalance.toLocaleString('en-IN')}
@@ -97,7 +90,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Closing Balance
+                  {t('ingestion.closingBalance')}
                 </span>
                 <span className="font-bold text-neutral-900 text-sm font-mono">
                   ₹{(document as BankStatementDoc).closingBalance.toLocaleString('en-IN')}
@@ -109,7 +102,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-emerald-50/60 border border-emerald-200">
                 <span className="text-[10px] uppercase font-bold text-emerald-800 block">
-                  Total Credits (Inflow)
+                  {t('topRibbon.inflows')}
                 </span>
                 <span className="font-display font-bold text-lg text-emerald-800 font-mono">
                   +₹{(document as BankStatementDoc).totalInflow.toLocaleString('en-IN')}
@@ -117,7 +110,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
               </div>
               <div className="p-3 bg-indigo-50/60 border border-indigo-200">
                 <span className="text-[10px] uppercase font-bold text-indigo-800 block">
-                  Total Debits (Outflow)
+                  {t('topRibbon.outflows')}
                 </span>
                 <span className="font-display font-bold text-lg text-indigo-800 font-mono">
                   -₹{(document as BankStatementDoc).totalOutflow.toLocaleString('en-IN')}
@@ -128,21 +121,21 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             {/* Statutory & Reconciliation details */}
             <div className="p-4 border border-neutral-200 space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Reconciliation Status</span>
+                <span className="text-neutral-500">{t('ingestion.reconciliationHeader')}</span>
                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300">
                   {(document as BankStatementDoc).reconciliationStatus}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Extracted Transactions</span>
+                <span className="text-neutral-500">{t('ingestion.reconciledTransactions')}</span>
                 <span className="font-mono font-bold text-neutral-900">
-                  {(document as BankStatementDoc).transactionCount} transactions normalized
+                  {(document as BankStatementDoc).transactionCount} transactions recorded
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-500">S3 Storage Key</span>
+                <span className="text-neutral-500">Source File</span>
                 <span className="font-mono text-[11px] text-neutral-700 truncate max-w-xs">
-                  {document.s3Key}
+                  {document.fileName}
                 </span>
               </div>
             </div>
@@ -155,7 +148,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-neutral-50 border border-neutral-200">
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Counterparty Entity
+                  {t('ingestion.counterparty')}
                 </span>
                 <span className="font-bold text-neutral-900 text-sm">
                   {(document as BillInvoiceDoc).counterpartyName}
@@ -166,7 +159,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Invoice Amount
+                  {t('ingestion.amountLabel')}
                 </span>
                 <span className="font-bold text-neutral-900 text-sm font-mono">
                   ₹{(document as BillInvoiceDoc).amount.toLocaleString('en-IN')}
@@ -179,7 +172,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  Due Date
+                  {t('ingestion.dueDate')}
                 </span>
                 <span className="font-semibold text-neutral-800 text-sm">
                   {(document as BillInvoiceDoc).dueDate || 'Immediate'}
@@ -199,15 +192,15 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Bank Statement Reconciliation</span>
+                <span className="text-neutral-500">{t('ingestion.reconciliationHeader')}</span>
                 <span className="px-2 py-0.5 bg-neutral-100 text-neutral-800 font-semibold border border-neutral-300">
-                  {(document as BillInvoiceDoc).matchedBankRef}
+                  {(document as BillInvoiceDoc).matchedBankRef || 'Matched'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-neutral-500">Storage Key</span>
+                <span className="text-neutral-500">Source File</span>
                 <span className="font-mono text-[11px] text-neutral-700 truncate max-w-xs">
-                  {document.s3Key}
+                  {document.fileName}
                 </span>
               </div>
             </div>
@@ -216,7 +209,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             {raw.lineItems && Array.isArray(raw.lineItems) && (
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-neutral-600 block mb-2">
-                  Parsed Line Items:
+                  {t('ingestion.extractedLineItems')}:
                 </span>
                 <div className="border border-neutral-200 overflow-hidden text-xs">
                   <table className="w-full text-left">
@@ -252,7 +245,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
           </span>
           <button
             onClick={onClose}
-            className="px-5 py-2 text-xs font-semibold bg-neutral-900 text-white hover:bg-neutral-800 transition-colors"
+            className="px-5 py-2 text-xs font-semibold bg-neutral-900 text-white hover:bg-neutral-800 transition-colors cursor-pointer"
           >
             Dismiss
           </button>

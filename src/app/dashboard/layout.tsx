@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth';
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud, Settings } from 'lucide-react';
 import clsx from 'clsx';
+import LanguageSelector from '@/components/ui/LanguageSelector';
 
 export default function DashboardLayout({
   children,
@@ -14,6 +16,7 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useTranslation();
   const [userEmail, setUserEmail] = useState<string>('');
   const [userId, setUserId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -54,18 +57,18 @@ export default function DashboardLayout({
       <div className="min-h-screen bg-[#FFFFFF] flex items-center justify-center">
         <div className="flex items-center space-x-3 text-neutral-500 font-sans text-sm">
           <div className="w-2 h-2 rounded-full bg-neutral-900 animate-ping" />
-          <span>Loading workspace...</span>
+          <span>{t('common.loading', 'Loading workspace...')}</span>
         </div>
       </div>
     );
   }
 
   const navItems = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Documents', href: '/dashboard/ingestion', icon: UploadCloud },
-    { name: 'Obligations', href: '/dashboard/obligations', icon: CalendarClock },
-    { name: 'Chat', href: '/dashboard/chat', icon: MessageSquare },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+    { key: 'dashboard', name: t('nav.dashboard', 'Dashboard'), href: '/dashboard', icon: LayoutDashboard },
+    { key: 'documents', name: t('nav.documents', 'Documents'), href: '/dashboard/ingestion', icon: UploadCloud },
+    { key: 'obligations', name: t('nav.obligations', 'Obligations'), href: '/dashboard/obligations', icon: CalendarClock },
+    { key: 'chat', name: t('nav.chat', 'Chat'), href: '/dashboard/chat', icon: MessageSquare },
+    { key: 'settings', name: t('nav.settings', 'Settings'), href: '/dashboard/settings', icon: Settings },
   ];
 
   return (
@@ -73,13 +76,18 @@ export default function DashboardLayout({
       
       {/* Desktop Sidebar (Left) */}
       <aside className="hidden sm:flex flex-col w-20 border-r border-neutral-200 bg-white items-center py-6 justify-between z-20">
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center space-y-6">
+          {/* Top App Icon / Language */}
+          <div className="w-10 h-10 bg-neutral-900 text-white flex items-center justify-center font-bold text-sm tracking-wider">
+            FF
+          </div>
+
           <nav className="flex flex-col space-y-3">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
-                  key={item.name}
+                  key={item.key}
                   href={item.href}
                   className={clsx(
                     "p-3 transition-all duration-150 group flex items-center justify-center relative",
@@ -91,7 +99,7 @@ export default function DashboardLayout({
                 >
                   <item.icon size={20} strokeWidth={isActive ? 2.5 : 1.75} />
                   {/* Tooltip */}
-                  <div className="absolute left-14 bg-neutral-900 text-white text-xs px-2 py-1 rounded-none opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 font-sans">
+                  <div className="absolute left-14 bg-neutral-900 text-white text-xs px-2.5 py-1 rounded-none opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 font-sans shadow-md">
                     {item.name}
                   </div>
                 </Link>
@@ -100,19 +108,24 @@ export default function DashboardLayout({
           </nav>
         </div>
 
-        <div className="flex flex-col items-center space-y-4">
+        <div className="flex flex-col items-center space-y-3">
+          {/* Language Switcher in Sidebar */}
+          <div className="relative">
+            <LanguageSelector variant="compact" />
+          </div>
+
           <div 
-            className="w-10 h-10 bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 font-bold text-sm"
+            className="w-9 h-9 bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 font-bold text-xs"
             title={userEmail}
           >
             {userEmail.charAt(0).toUpperCase()}
           </div>
           <button
             onClick={handleSignOut}
-            className="p-3 text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-            title="Sign Out"
+            className="p-2.5 text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer"
+            title={t('nav.signOut', 'Sign Out')}
           >
-            <LogOut size={20} />
+            <LogOut size={18} />
           </button>
         </div>
       </aside>
@@ -130,7 +143,7 @@ export default function DashboardLayout({
           const isActive = pathname === item.href;
           return (
             <Link
-              key={item.name}
+              key={item.key}
               href={item.href}
               className={clsx(
                 "flex flex-col items-center justify-center p-2 rounded-xl flex-1 max-w-[80px]",
@@ -143,7 +156,7 @@ export default function DashboardLayout({
               )}>
                  <item.icon size={20} strokeWidth={isActive ? 2.5 : 2} />
               </div>
-              <span className="text-[10px] font-semibold font-sans">{item.name}</span>
+              <span className="text-[10px] font-semibold font-sans truncate max-w-full">{item.name}</span>
             </Link>
           );
         })}
@@ -152,3 +165,4 @@ export default function DashboardLayout({
     </div>
   );
 }
+

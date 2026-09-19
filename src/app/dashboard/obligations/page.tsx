@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import ObligationsWidget from '@/components/dashboard/ObligationsWidget';
+import LanguageSelector from '@/components/ui/LanguageSelector';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 export default function ObligationsPage() {
+  const { t } = useTranslation();
   const [data, setData] = useState<FinancialMetricData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -29,7 +32,7 @@ export default function ObligationsPage() {
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-sans bg-white">
         <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent animate-spin" />
         <div className="text-xs uppercase tracking-widest font-semibold text-neutral-500">
-          Loading Recurrent Obligations...
+          {t('obligations.loading', 'Loading Recurrent Obligations...')}
         </div>
       </div>
     );
@@ -39,16 +42,22 @@ export default function ObligationsPage() {
     <div className="flex flex-col max-w-7xl mx-auto w-full font-sans bg-white border border-neutral-200 divide-y divide-neutral-200">
       
       {/* Header */}
-      <header className="p-6 sm:p-8 bg-white">
-        <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
-          FinFine Pro
+      <header className="p-6 sm:p-8 bg-white flex items-start justify-between">
+        <div>
+          <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
+            {t('common.appName', 'FinFine Pro')}
+          </div>
+          <h1 className="font-display font-bold text-4xl sm:text-5xl text-neutral-900 tracking-tight">
+            {t('obligations.title', 'Obligations')}
+          </h1>
+          <p className="text-sm text-neutral-500 mt-2 max-w-2xl">
+            {t('obligations.subtitle', 'Track fixed overheads, supplier payables, debtor clearance velocity, and cash conversion cycles.')}
+          </p>
         </div>
-        <h1 className="font-display font-bold text-4xl sm:text-5xl text-neutral-900 tracking-tight">
-          Obligations
-        </h1>
-        <p className="text-sm text-neutral-500 mt-2 max-w-2xl">
-          Track fixed overheads, supplier payables, debtor clearance velocity, and cash conversion cycles.
-        </p>
+
+        <div className="sm:hidden">
+          <LanguageSelector variant="compact" />
+        </div>
       </header>
 
       {/* Obligations Overview */}
@@ -59,3 +68,4 @@ export default function ObligationsPage() {
     </div>
   );
 }
+

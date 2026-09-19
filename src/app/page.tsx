@@ -1,4 +1,8 @@
+'use client';
+
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
+import LanguageSelector from '@/components/ui/LanguageSelector';
 
 function ArchitecturalCorner({ className }: { className?: string }) {
   return (
@@ -125,6 +129,7 @@ function ArchitecturalCorner({ className }: { className?: string }) {
 }
 
 export default function Home() {
+  const { t } = useTranslation();
   const petalAngles = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
 
   return (
@@ -140,23 +145,24 @@ export default function Home() {
         <div className="absolute inset-1 border border-neutral-900/10" />
       </div>
 
-      {/* Navbar: FinFine Pro CENTERED, Sign in on RIGHT */}
-      <nav className="relative z-30 w-full px-8 sm:px-14 py-6 sm:py-9 flex items-center justify-between">
+      {/* Navbar: FinFine Pro CENTERED, Language & Sign in on RIGHT */}
+      <nav className="relative z-30 w-full px-6 sm:px-14 py-6 sm:py-9 flex items-center justify-between">
         {/* Left Spacer for absolute center balance */}
         <div className="flex-1" />
 
         {/* Center: FinFine Pro in Gilroy Bold */}
         <span className="font-sans font-bold text-base sm:text-lg tracking-tight text-neutral-900">
-          FinFine Pro
+          {t('common.appName', 'FinFine Pro')}
         </span>
 
-        {/* Right: Sign in Button */}
-        <div className="flex-1 flex justify-end">
+        {/* Right: Language Selector + Sign in Button */}
+        <div className="flex-1 flex items-center justify-end space-x-3">
+          <LanguageSelector variant="compact" />
           <Link
             href="/login"
-            className="text-xs sm:text-sm font-sans font-semibold text-neutral-800 hover:text-black px-5 py-2 rounded-full border border-neutral-300 hover:border-neutral-900 bg-white/80 backdrop-blur-sm transition-all duration-200 shadow-sm cursor-pointer inline-block"
+            className="text-xs sm:text-sm font-sans font-semibold text-neutral-800 hover:text-black px-4 sm:px-5 py-1.5 sm:py-2 rounded-full border border-neutral-300 hover:border-neutral-900 bg-white/80 backdrop-blur-sm transition-all duration-200 shadow-sm cursor-pointer inline-block"
           >
-            Sign in
+            {t('landing.signIn', 'Sign in')}
           </Link>
         </div>
       </nav>
@@ -237,22 +243,22 @@ export default function Home() {
 
           {/* Headline in PP Cirka */}
           <h1 className="font-display text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight text-neutral-900 relative z-10 [text-shadow:0_0_35px_rgba(255,255,255,0.9)] mb-3 sm:mb-4">
-            Cash flow made easy
+            {t('landing.title', 'Cash flow made easy')}
           </h1>
 
           {/* Subtitle in Gilroy */}
           <p className="font-sans text-base sm:text-lg text-neutral-600 max-w-xl mx-auto relative z-10 font-medium">
-            Helping small businesses make financial decisions, smarter
+            {t('landing.subtitle', 'Helping small businesses make financial decisions, smarter')}
           </p>
         </div>
 
-        {/* Simple Roundish Soft Call to Action Button saying "start" */}
+        {/* Simple Roundish Soft Call to Action Button */}
         <div>
           <Link
             href="/login"
-            className="px-10 py-3.5 rounded-full bg-[#111215] text-white font-sans font-bold text-sm tracking-wide shadow-[0_8px_25px_rgba(17,18,21,0.14)] hover:shadow-[0_12px_32px_rgba(17,18,21,0.24)] hover:bg-neutral-800 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer inline-block"
+            className="px-10 py-3.5 rounded-full bg-[#111215] text-white font-sans font-bold text-sm tracking-wide shadow-[0_8px_25px_rgba(17,18,21,0.14)] hover:shadow-[0_12px_32px_rgba(17,18,21,0.24)] hover:bg-neutral-800 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer inline-block capitalize"
           >
-            start
+            {t('landing.start', 'start')}
           </Link>
         </div>
       </main>
@@ -262,3 +268,4 @@ export default function Home() {
     </div>
   );
 }
+

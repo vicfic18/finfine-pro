@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Building2,
   ShieldAlert,
@@ -9,7 +10,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
+  Languages,
 } from 'lucide-react';
+import LanguageSelector from '@/components/ui/LanguageSelector';
 
 interface MerchantSettings {
   tenantId: string;
@@ -25,6 +28,7 @@ interface MerchantSettings {
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<MerchantSettings>({
     tenantId: 'msme-001',
     businessName: '',
@@ -116,7 +120,7 @@ export default function SettingsPage() {
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-sans bg-white">
         <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent animate-spin" />
         <div className="text-xs uppercase tracking-widest font-semibold text-neutral-500">
-          Loading Settings...
+          {t('settings.loading')}
         </div>
       </div>
     );
@@ -130,10 +134,10 @@ export default function SettingsPage() {
           FinFine Pro
         </div>
         <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight">
-          Settings
+          {t('settings.title')}
         </h1>
         <p className="text-xs sm:text-sm text-neutral-500 mt-1">
-          Manage your business profile, safety cash buffer, and account data.
+          {t('settings.subtitle')}
         </p>
       </header>
 
@@ -141,7 +145,7 @@ export default function SettingsPage() {
       {saveSuccess && (
         <div className="p-4 bg-emerald-50 text-emerald-900 text-xs font-medium flex items-center space-x-2 border-b border-emerald-100">
           <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-          <span>Settings saved successfully. All dashboard metrics will reflect these updates.</span>
+          <span>{t('settings.savedSuccess')}</span>
         </div>
       )}
 
@@ -166,63 +170,63 @@ export default function SettingsPage() {
           <div className="flex items-center space-x-2">
             <Building2 size={18} className="text-neutral-700" />
             <h2 className="font-display font-bold text-xl text-neutral-900">
-              Business Profile
+              {t('settings.profileSection')}
             </h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
             <div className="space-y-1.5 sm:col-span-2">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                Business Name
+                {t('settings.businessName')}
               </label>
               <input
                 type="text"
                 required
                 value={settings.businessName}
                 onChange={(e) => setSettings({ ...settings, businessName: e.target.value })}
-                placeholder="e.g. Acme Enterprises"
+                placeholder={t('settings.businessNamePlaceholder')}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 text-neutral-900 font-medium focus:outline-none focus:border-neutral-900 transition-colors"
               />
               <span className="text-[10px] text-neutral-400">
-                This name displays prominently on your dashboard header and reports.
+                {t('settings.businessNameSub')}
               </span>
             </div>
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                Trade Name
+                {t('settings.tradeName')}
               </label>
               <input
                 type="text"
                 value={settings.tradeName || ''}
                 onChange={(e) => setSettings({ ...settings, tradeName: e.target.value })}
-                placeholder="e.g. Acme Stores"
+                placeholder={t('settings.tradeNamePlaceholder')}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 text-neutral-900 focus:outline-none focus:border-neutral-900 transition-colors"
               />
             </div>
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                Industry Sector
+                {t('settings.industrySector')}
               </label>
               <select
                 value={settings.category || 'Retail & Distribution'}
                 onChange={(e) => setSettings({ ...settings, category: e.target.value })}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 text-neutral-900 focus:outline-none focus:border-neutral-900 transition-colors"
               >
-                <option value="Retail & Distribution">Retail & Distribution</option>
-                <option value="Textiles & Apparel">Textiles & Apparel</option>
-                <option value="Manufacturing & Production">Manufacturing & Production</option>
-                <option value="FMCG & Groceries">FMCG & Groceries</option>
-                <option value="Services & Consulting">Services & Consulting</option>
-                <option value="Electronics & Hardware">Electronics & Hardware</option>
-                <option value="Other">Other</option>
+                <option value="Retail & Distribution">{t('settings.sectors.retail')}</option>
+                <option value="Textiles & Apparel">{t('settings.sectors.textiles')}</option>
+                <option value="Manufacturing & Production">{t('settings.sectors.manufacturing')}</option>
+                <option value="FMCG & Groceries">{t('settings.sectors.fmcg')}</option>
+                <option value="Services & Consulting">{t('settings.sectors.services')}</option>
+                <option value="Electronics & Hardware">{t('settings.sectors.electronics')}</option>
+                <option value="Other">{t('settings.sectors.other')}</option>
               </select>
             </div>
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                GSTIN
+                {t('settings.gstin')}
               </label>
               <input
                 type="text"
@@ -235,7 +239,7 @@ export default function SettingsPage() {
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                PAN
+                {t('settings.pan')}
               </label>
               <input
                 type="text"
@@ -253,14 +257,14 @@ export default function SettingsPage() {
           <div className="flex items-center space-x-2">
             <ShieldAlert size={18} className="text-neutral-700" />
             <h2 className="font-display font-bold text-xl text-neutral-900">
-              Safety Rules
+              {t('settings.safetySection')}
             </h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                Minimum Cash Safety Buffer (₹)
+                {t('settings.safetyBuffer')}
               </label>
               <input
                 type="number"
@@ -273,13 +277,13 @@ export default function SettingsPage() {
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 font-mono text-neutral-900 font-bold focus:outline-none focus:border-neutral-900 transition-colors"
               />
               <span className="text-[10px] text-neutral-400">
-                Amount kept in reserve before calculating spendable liquidity.
+                {t('settings.safetyBufferSub')}
               </span>
             </div>
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                Low Runway Warning Threshold (Days)
+                {t('settings.lowRunwayThreshold')}
               </label>
               <input
                 type="number"
@@ -292,67 +296,80 @@ export default function SettingsPage() {
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 font-mono text-neutral-900 font-bold focus:outline-none focus:border-neutral-900 transition-colors"
               />
               <span className="text-[10px] text-neutral-400">
-                Triggers visual alert when projected zero-cash date is closer than this.
+                {t('settings.lowRunwaySub')}
               </span>
             </div>
           </div>
         </div>
 
+        {/* Section 3: Language & Localisation */}
+        <div className="p-6 sm:p-8 space-y-6 bg-white">
+          <div className="flex items-center space-x-2">
+            <Languages size={18} className="text-neutral-700" />
+            <h2 className="font-display font-bold text-xl text-neutral-900">
+              {t('settings.languageSection')}
+            </h2>
+          </div>
+          <p className="text-xs text-neutral-500">
+            {t('settings.languageSub')}
+          </p>
+          <LanguageSelector variant="pills" />
+        </div>
+
         {/* Action Save Bar */}
         <div className="p-6 sm:p-8 bg-neutral-50 flex items-center justify-between">
           <span className="text-xs text-neutral-500">
-            Tenant ID: <span className="font-mono font-semibold text-neutral-800">{settings.tenantId}</span>
+            {t('settings.tenantId')} <span className="font-mono font-semibold text-neutral-800">{settings.tenantId}</span>
           </span>
 
           <button
             type="submit"
             disabled={saving}
-            className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs transition-colors flex items-center space-x-2 disabled:opacity-50"
+            className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-xs transition-colors flex items-center space-x-2 disabled:opacity-50 cursor-pointer"
           >
             {saving ? (
               <>
                 <RefreshCw size={14} className="animate-spin" />
-                <span>Saving...</span>
+                <span>{t('settings.saving')}</span>
               </>
             ) : (
               <>
                 <Save size={14} />
-                <span>Save Changes</span>
+                <span>{t('settings.saveChanges')}</span>
               </>
             )}
           </button>
         </div>
       </form>
 
-      {/* Section 3: Reset Account Data (Purge for Fresh Manual Uploads) */}
+      {/* Section 4: Reset Account Data (Purge for Fresh Manual Uploads) */}
       <div className="p-6 sm:p-8 bg-white space-y-4">
         <div className="flex items-center space-x-2 text-rose-700">
           <Trash2 size={18} />
           <h2 className="font-display font-bold text-xl text-neutral-900">
-            Reset Data
+            {t('settings.resetSection')}
           </h2>
         </div>
 
         <p className="text-xs text-neutral-600 leading-relaxed max-w-2xl">
-          Permanently delete all parsed bank statements, invoices, extracted transactions, obligations, and
-          cash snapshots for this tenant. Use this to start with a completely blank slate and upload your own statements.
+          {t('settings.resetDesc')}
         </p>
 
         {!showResetConfirm ? (
           <button
             type="button"
             onClick={() => setShowResetConfirm(true)}
-            className="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold text-xs transition-colors"
+            className="px-4 py-2 border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold text-xs transition-colors cursor-pointer"
           >
-            Reset All Financial Data
+            {t('settings.resetBtn')}
           </button>
         ) : (
           <div className="p-4 bg-rose-50 border border-rose-200 space-y-3 max-w-xl">
             <div className="flex items-start space-x-2 text-rose-900 text-xs">
               <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold block">Are you absolutely sure?</span>
-                <span>All documents, ledger records, and obligations will be wiped immediately.</span>
+                <span className="font-bold block">{t('settings.resetConfirmTitle')}</span>
+                <span>{t('settings.resetConfirmSub')}</span>
               </div>
             </div>
 
@@ -361,15 +378,15 @@ export default function SettingsPage() {
                 type="button"
                 disabled={resetting}
                 onClick={handleResetData}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors disabled:opacity-50 flex items-center space-x-2"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors disabled:opacity-50 flex items-center space-x-2 cursor-pointer"
               >
                 {resetting ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
-                    <span>Resetting...</span>
+                    <span>{t('settings.resettingBtn')}</span>
                   </>
                 ) : (
-                  <span>Yes, Delete All Records</span>
+                  <span>{t('settings.resetConfirmBtn')}</span>
                 )}
               </button>
 
@@ -377,9 +394,9 @@ export default function SettingsPage() {
                 type="button"
                 disabled={resetting}
                 onClick={() => setShowResetConfirm(false)}
-                className="px-4 py-2 bg-white border border-neutral-300 text-neutral-700 font-semibold text-xs hover:bg-neutral-50 transition-colors"
+                className="px-4 py-2 bg-white border border-neutral-300 text-neutral-700 font-semibold text-xs hover:bg-neutral-50 transition-colors cursor-pointer"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>
