@@ -1,13 +1,13 @@
 ---
 name: code-interpreter-execution
-description: Dynamically implement approved FinFine Pro analytical rules in isolated AgentCore Code Interpreter Python and return traceable structured JSON without inventing financial logic.
+description: Dynamically implement approved FinFine Pro analytical rules in the isolated Lambda Python executor and return traceable structured JSON without inventing financial logic.
 ---
 
 # Code Interpreter Execution
 
 ## Purpose
 
-Define the controlled execution contract for authoritative analytics arithmetic in AgentCore Code Interpreter.
+Define the controlled execution contract for authoritative analytics arithmetic in the isolated Lambda Python executor.
 
 ## When to Use
 

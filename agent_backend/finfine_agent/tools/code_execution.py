@@ -6,8 +6,6 @@ import ast
 from typing import Any
 
 from strands import tool
-from strands_tools.code_interpreter.models import ExecuteCodeAction
-
 
 BLOCKED_IMPORTS = {
     "boto3",
@@ -28,6 +26,12 @@ def _validate_financial_code(code: str) -> None:
         raise ValueError("code cannot be empty")
     if len(code) > 20_000:
         raise ValueError("code is too long")
+    if "transactions = [" in code or "transactions=[" in code:
+        raise ValueError(
+            "Do not paste transaction lists into Python. Do not retry this code. "
+            "Use totals already returned by get_transactions, or call "
+            "export_transactions_csv and pass its artifactId."
+        )
 
     try:
         tree = ast.parse(code)
@@ -39,7 +43,7 @@ def _validate_financial_code(code: str) -> None:
             imports = {alias.name.split(".", 1)[0] for alias in node.names}
             blocked = imports & BLOCKED_IMPORTS
             if blocked:
-                raise ValueError(f"blocked import: {sorted(blocked)[0]}")
+                raise ValueError(f"blocked import: {min(blocked)}")
         elif isinstance(node, ast.ImportFrom):
             root = (node.module or "").split(".", 1)[0]
             if root in BLOCKED_IMPORTS:
@@ -49,31 +53,36 @@ def _validate_financial_code(code: str) -> None:
                 raise ValueError(f"blocked function: {node.func.id}")
 
 
-def create_financial_python_tool(interpreter: Any) -> Any:
-    """Create a Strands tool backed by one managed interpreter session."""
+def create_financial_python_tool(executor: Any) -> Any:
+    """Create a Strands tool backed by the isolated Lambda executor."""
 
     @tool(name="run_financial_python")
-    def run_financial_python(code: str, purpose: str) -> dict[str, Any]:
-        """Run Python for financial calculations or small data models.
+    def run_financial_python(
+        code: str,
+        purpose: str,
+        artifact_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Required for derived financial calculations and small data models.
 
-        Use this only after reading the required financial records with the data
-        tools. Embed only the necessary returned values in the code.
+        For several transactions, first call export_transactions_csv and provide
+        its artifactId. Never paste a transaction list into code. Read the input
+        with pandas.read_csv("transactions.csv"). Keep the code short and print
+        the final values. For one or two scalar values, embedding them is okay.
+        Call this whenever an answer needs new arithmetic, grouping, comparison,
+        trends, percentages, projections, statistics, optimization, or prediction.
+        Do not answer a requested computation until this returns successfully.
 
         Args:
             code: Focused Python code that prints its final result.
             purpose: A short explanation of the calculation or model.
+            artifact_id: Optional ID returned by export_transactions_csv. The
+                file is available to Python as transactions.csv.
         """
         _validate_financial_code(code)
-        result = interpreter.execute_code(
-            ExecuteCodeAction(
-                type="executeCode",
-                language="python",
-                clear_context=False,
-                code=f"# Purpose: {purpose}\n{code}",
-            )
+        return executor.execute(
+            code=f"# Purpose: {purpose}\n{code}",
+            purpose=purpose,
+            artifact_id=artifact_id,
         )
-        if result.get("status") != "success":
-            raise RuntimeError(f"Code Interpreter failed: {result.get('content')}")
-        return result
 
     return run_financial_python

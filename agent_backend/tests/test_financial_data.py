@@ -2,7 +2,11 @@ from decimal import Decimal
 
 import pytest
 
-from finfine_agent.tools.financial_data import FinancialDataService
+from finfine_agent.artifacts import LocalArtifactStore
+from finfine_agent.tools.financial_data import (
+    FinancialDataService,
+    create_transactions_csv_tool,
+)
 
 
 class FakeStore:
@@ -25,7 +29,7 @@ class FakeStore:
             {
                 "id": "tx-1",
                 "date": "2026-10-07",
-                "amount": Decimal("5550"),
+                "amount": Decimal(5550),
                 "type": "INFLOW",
                 "referenceNumber": "407813028833",
                 "counterpartyName": "Sharma Distributors",
@@ -34,7 +38,7 @@ class FakeStore:
             {
                 "id": "tx-1-duplicate",
                 "date": "2026-10-07",
-                "amount": Decimal("5550"),
+                "amount": Decimal(5550),
                 "type": "INFLOW",
                 "referenceNumber": "407813028833",
                 "counterpartyName": "Sharma Distributors",
@@ -43,7 +47,7 @@ class FakeStore:
             {
                 "id": "tx-2",
                 "date": "2026-10-06",
-                "amount": Decimal("15000"),
+                "amount": Decimal(15000),
                 "type": "OUTFLOW",
                 "referenceNumber": "407813020202",
                 "category": "STATUTORY_TAX",
@@ -53,7 +57,7 @@ class FakeStore:
             {
                 "id": "obl-gst",
                 "title": "GST payment",
-                "amount": Decimal("45000"),
+                "amount": Decimal(45000),
                 "dueDate": "2026-10-10",
                 "type": "PAYABLE",
                 "isStatutory": True,
@@ -62,7 +66,7 @@ class FakeStore:
             {
                 "id": "obl-customer",
                 "title": "Customer invoice",
-                "amount": Decimal("40000"),
+                "amount": Decimal(40000),
                 "dueDate": "2026-10-11",
                 "type": "RECEIVABLE",
                 "status": "SCHEDULED",
@@ -70,7 +74,7 @@ class FakeStore:
             {
                 "id": "obl-paid",
                 "title": "Already paid",
-                "amount": Decimal("5000"),
+                "amount": Decimal(5000),
                 "dueDate": "2026-10-09",
                 "type": "PAYABLE",
                 "status": "PAID",
@@ -129,3 +133,33 @@ def test_upcoming_obligations_excludes_paid_items(service: FinancialDataService)
 def test_invalid_date_is_rejected(service: FinancialDataService) -> None:
     with pytest.raises(ValueError, match="YYYY-MM-DD"):
         service.transactions(start_date="07/10/2026")
+
+
+def test_transactions_csv_is_deduplicated_and_ordered(
+    service: FinancialDataService,
+) -> None:
+    columns, rows = service.transactions_csv("2026-10-01", "2026-10-07")
+
+    assert columns[:3] == ["date", "amount", "type"]
+    assert [row["date"] for row in rows] == ["2026-10-06", "2026-10-07"]
+    assert rows[1]["amount"] == 5550
+
+
+def test_export_tool_stores_csv_artifact(
+    service: FinancialDataService,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    artifacts = LocalArtifactStore(tmp_path)
+    monkeypatch.setattr(
+        "finfine_agent.tools.financial_data._service",
+        lambda: service,
+    )
+    csv_tool = create_transactions_csv_tool(artifacts)
+
+    result = csv_tool._tool_func(start_date="2026-10-01", end_date="2026-10-07")
+    artifact, data = artifacts.read(result["artifactId"])
+
+    assert result["rowCount"] == 2
+    assert artifact.filename == "transactions.csv"
+    assert data.decode().splitlines()[0].startswith("date,amount,type")

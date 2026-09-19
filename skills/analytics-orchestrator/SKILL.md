@@ -7,7 +7,7 @@ description: Route FinFine Pro merchant analytics requests through validated dat
 
 ## Purpose
 
-Classify a merchant request and build the smallest complete analytics workflow that answers it. Ensure that structured data validation precedes analytics, authoritative arithmetic runs in AgentCore Code Interpreter, and validation precedes explanation.
+Classify a merchant request and build the smallest complete analytics workflow that answers it. Ensure that structured data validation precedes analytics, authoritative arithmetic runs in the isolated Lambda Python executor, and validation precedes explanation.
 
 ## When to Use
 
