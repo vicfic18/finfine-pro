@@ -10,6 +10,7 @@ from threading import Event
 from typing import Any
 
 from strands import Agent
+from strands.models.gemini import GeminiModel
 from strands.models.openai import OpenAIModel
 
 from finfine_agent.artifacts import LocalArtifactStore
@@ -31,15 +32,29 @@ class AgentCancelledError(Exception):
     """The agent invocation was cancelled before producing a final answer."""
 
 
-def create_model(settings: AgentSettings) -> OpenAIModel:
-    """Create an OpenAI-compatible model for Strands."""
+def create_model(settings: AgentSettings) -> OpenAIModel | GeminiModel:
+    """Create the configured model provider for Strands."""
+    if "generativelanguage.googleapis.com" in settings.model_base_url.lower():
+        return GeminiModel(
+            client_args={"api_key": settings.model_api_key},
+            model_id=settings.model_id,
+            params={
+                "max_output_tokens": settings.model_max_tokens,
+                "temperature": settings.model_temperature,
+            },
+        )
+
     params: dict[str, Any] = {
         "max_tokens": settings.model_max_tokens,
         "temperature": settings.model_temperature,
     }
-    if "groq.com" not in settings.model_base_url.lower():
+    if "openrouter.ai" in settings.model_base_url.lower():
         params["extra_body"] = {
             "reasoning": {"enabled": False, "exclude": True}
+        }
+    elif "api.minimax.io" in settings.model_base_url.lower():
+        params["extra_body"] = {
+            "thinking": {"type": "disabled"},
         }
 
     return OpenAIModel(

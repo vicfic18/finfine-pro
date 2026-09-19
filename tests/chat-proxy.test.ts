@@ -84,6 +84,34 @@ test('requires and forwards the Cognito bearer token', async () => {
   });
 });
 
+test('streams NDJSON from the local runtime without buffering', async () => {
+  process.env.FINFINE_AGENT_RUNTIME_URL = 'http://127.0.0.1:8080';
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), 'http://127.0.0.1:8080/invocations/stream');
+    assert.equal(new Headers(init?.headers).get('accept'), 'application/x-ndjson');
+    return new Response([
+      JSON.stringify({ type: 'start', requestId: REQUEST_ID, sessionId: SESSION_ID }),
+      JSON.stringify({ type: 'text_delta', delta: 'Hello' }),
+      JSON.stringify({ type: 'done', requestId: REQUEST_ID, sessionId: SESSION_ID, answer: 'Hello' }),
+      '',
+    ].join('\n'), { headers: { 'Content-Type': 'application/x-ndjson' } });
+  };
+
+  const response = await POST(new Request('http://localhost/api/chat', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer access-token',
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
+    },
+    body: JSON.stringify({ prompt: 'Balance?', requestId: REQUEST_ID }),
+  }));
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /application\/x-ndjson/);
+  assert.match(await response.text(), /"type":"done"/);
+});
+
 test('times out the upstream request with a safe error', async () => {
   process.env.FINFINE_AGENT_RUNTIME_URL = 'http://127.0.0.1:8080';
   process.env.FINFINE_CHAT_PROXY_TIMEOUT_MS = '1';

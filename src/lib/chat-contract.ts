@@ -24,6 +24,20 @@ export type ChatErrorResponse = {
   message: string;
 };
 
+export type ChatStreamStep = {
+  id: string;
+  kind: 'tool' | 'code';
+  title: string;
+  status: 'running' | 'complete' | 'error';
+};
+
+export type ChatStreamEvent =
+  | { type: 'start'; requestId: string; sessionId: string }
+  | { type: 'step'; step: ChatStreamStep }
+  | { type: 'text_delta'; delta: string }
+  | { type: 'done'; requestId: string; sessionId: string; answer: string }
+  | { type: 'error'; requestId: string; code: string; message: string };
+
 export type ConversationSummary = {
   sessionId: string;
   title: string;
@@ -129,6 +143,19 @@ export function isChatSuccessResponse(value: unknown): value is ChatSuccessRespo
     isUuid(value.sessionId) &&
     typeof value.answer === 'string'
   );
+}
+
+export function isChatStreamEvent(value: unknown): value is ChatStreamEvent {
+  if (!isRecord(value) || typeof value.type !== 'string') return false;
+  if (value.type === 'start') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.sessionId === 'string' && isUuid(value.sessionId);
+  if (value.type === 'text_delta') return typeof value.delta === 'string';
+  if (value.type === 'done') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.sessionId === 'string' && isUuid(value.sessionId) && typeof value.answer === 'string';
+  if (value.type === 'error') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.code === 'string' && typeof value.message === 'string';
+  if (value.type === 'step') {
+    const step = value.step;
+    return isRecord(step) && typeof step.id === 'string' && step.id.length > 0 && step.id.length <= 256 && (step.kind === 'tool' || step.kind === 'code') && typeof step.title === 'string' && step.title.length > 0 && step.title.length <= 160 && (step.status === 'running' || step.status === 'complete' || step.status === 'error');
+  }
+  return false;
 }
 
 function isIsoDate(value: unknown): value is string {
