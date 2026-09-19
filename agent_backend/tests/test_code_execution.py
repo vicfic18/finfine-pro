@@ -6,13 +6,13 @@ from finfine_agent.tools.code_execution import (
 )
 
 
-class FakeInterpreter:
+class FakeExecutor:
     def __init__(self) -> None:
-        self.action = None
+        self.request = None
 
-    def execute_code(self, action):
-        self.action = action
-        return {"status": "success", "content": [{"text": "42"}]}
+    def execute(self, **request):
+        self.request = request
+        return {"status": "success", "stdout": "42\n"}
 
 
 def test_allows_math_and_machine_learning_imports() -> None:
@@ -21,6 +21,11 @@ def test_allows_math_and_machine_learning_imports() -> None:
         "import pandas as pd\n"
         "print(sum([1, 2, 3]))"
     )
+
+
+def test_rejects_pasted_transaction_lists() -> None:
+    with pytest.raises(ValueError, match="export_transactions_csv"):
+        _validate_financial_code("transactions = [{'amount': 10}]")
 
 
 @pytest.mark.parametrize(
@@ -38,12 +43,16 @@ def test_blocks_aws_network_system_and_file_access(code: str) -> None:
         _validate_financial_code(code)
 
 
-def test_tool_runs_python_through_interpreter() -> None:
-    interpreter = FakeInterpreter()
-    code_tool = create_financial_python_tool(interpreter)
+def test_tool_runs_python_through_lambda_executor() -> None:
+    executor = FakeExecutor()
+    code_tool = create_financial_python_tool(executor)
 
-    result = code_tool._tool_func(code="print(6 * 7)", purpose="Check arithmetic")
+    result = code_tool._tool_func(
+        code="print(6 * 7)",
+        purpose="Check arithmetic",
+        artifact_id="artifact-1",
+    )
 
     assert result["status"] == "success"
-    assert interpreter.action.language.value == "python"
-    assert "Check arithmetic" in interpreter.action.code
+    assert executor.request["artifact_id"] == "artifact-1"
+    assert "Check arithmetic" in executor.request["code"]

@@ -8,7 +8,6 @@ from typing import Any
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
 from strands.plugins import Plugin, hook
 
-
 SENSITIVE_PARTS = ("api_key", "authorization", "password", "secret", "token")
 
 

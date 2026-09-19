@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import atexit
 import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Literal
 
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, StringConstraints
-import uvicorn
 
-from finfine_agent.agent import ask, create_agent, create_code_interpreter
+from finfine_agent.agent import ask, create_agent
 from finfine_agent.config import AgentSettings
-
 
 logger = logging.getLogger(__name__)
 Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000)]
@@ -52,17 +50,10 @@ class RuntimeHealthResponse(BaseModel):
 
 
 def run_agent_question(question: str) -> str:
-    """Run one isolated agent request and always release its AWS session."""
+    """Run one isolated agent request."""
     settings = AgentSettings.from_environment()
-    interpreter = create_code_interpreter(settings)
-    try:
-        agent = create_agent(settings, code_interpreter=interpreter, trace=True)
-        return ask(agent, question)
-    finally:
-        try:
-            interpreter.cleanup_platform()
-        finally:
-            atexit.unregister(interpreter.cleanup_platform)
+    agent = create_agent(settings, trace=True)
+    return ask(agent, question)
 
 
 async def get_answerer() -> Answerer:
@@ -73,8 +64,8 @@ async def get_answerer() -> Answerer:
 def _public_error(exc: Exception) -> str:
     """Return a useful message without exposing credentials or internals."""
     error_text = str(exc)
-    if "maxCodeInterpreterSessions" in error_text:
-        return "AWS Code Interpreter is unavailable because its account session quota is not ready."
+    if "ResourceNotFoundException" in error_text:
+        return "The Lambda code executor is not deployed or its name is incorrect."
     if "CreateOAuth2Token" in error_text:
         return "AWS login has expired. Sign in to AWS again, then retry."
     if "Connection error" in error_text or "ConnectError" in error_text:

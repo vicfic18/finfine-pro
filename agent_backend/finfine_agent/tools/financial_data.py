@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import csv
 import json
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from functools import lru_cache
+from io import StringIO
 from typing import Any, Protocol
 
 from strands import tool
 
+from finfine_agent.artifacts import LocalArtifactStore
 from finfine_agent.config import Settings
 from finfine_agent.dynamodb import DynamoFinancialStore
 
@@ -202,6 +205,56 @@ class FinancialDataService:
             "transactions": items,
         }
 
+    def transactions_csv(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 2_000,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """Return deduplicated transaction rows suitable for CSV analysis."""
+        if start_date:
+            _parse_date(start_date, "start_date")
+        if end_date:
+            _parse_date(end_date, "end_date")
+        if start_date and end_date and start_date > end_date:
+            raise ValueError("start_date cannot be after end_date")
+        if not 1 <= limit <= 2_000:
+            raise ValueError("limit must be between 1 and 2000")
+
+        raw_items = self._store.list_transactions(start_date, end_date)
+        unique: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for item in raw_items:
+            key = _transaction_key(item)
+            current = unique.get(key)
+            if current is None or (item.get("updatedAt") or "") > (
+                current.get("updatedAt") or ""
+            ):
+                unique[key] = item
+
+        columns = [
+            "date",
+            "amount",
+            "type",
+            "paymentMode",
+            "counterpartyName",
+            "counterpartyIdentifier",
+            "category",
+            "balanceAfterTransaction",
+            "referenceNumber",
+            "description",
+            "status",
+            "documentId",
+        ]
+        ordered = sorted(
+            unique.values(),
+            key=lambda item: (item.get("date") or "", item.get("createdAt") or ""),
+        )[:limit]
+        rows = [
+            {column: _plain_number(item.get(column)) for column in columns}
+            for item in ordered
+        ]
+        return columns, rows
+
     def upcoming_obligations(
         self,
         days_ahead: int = 30,
@@ -215,7 +268,11 @@ class FinancialDataService:
         if normalized_type not in {"ALL", "PAYABLE", "RECEIVABLE"}:
             raise ValueError("obligation_type must be ALL, PAYABLE, or RECEIVABLE")
 
-        start = _parse_date(as_of_date, "as_of_date") if as_of_date else date.today()
+        start = (
+            _parse_date(as_of_date, "as_of_date")
+            if as_of_date
+            else datetime.now(UTC).date()
+        )
         end = start + timedelta(days=days_ahead)
         raw_items = self._store.list_obligations(start.isoformat(), end.isoformat())
         active_items = [
@@ -283,7 +340,11 @@ def get_transactions(
     end_date: str | None = None,
     limit: int = 100,
 ) -> dict[str, Any]:
-    """Read transactions for an optional YYYY-MM-DD date range.
+    """Read transactions and ready-to-use inflow/outflow totals for a date range.
+
+    The result already contains totalInflow and totalOutflow. Use those values
+    directly when the user asks for a transaction summary; Python is not needed
+    to recalculate or verify them.
 
     Args:
         start_date: Earliest transaction date to include.
@@ -311,3 +372,47 @@ def get_upcoming_obligations(
         obligation_type=obligation_type,
         as_of_date=as_of_date,
     )
+
+
+def create_transactions_csv_tool(artifacts: LocalArtifactStore) -> Any:
+    """Create the transaction CSV export tool for one agent process."""
+
+    @tool(name="export_transactions_csv")
+    def export_transactions_csv(
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 2_000,
+    ) -> dict[str, Any]:
+        """Required before Python computes over transaction records.
+
+        Call this instead of copying transaction objects into Python code. Pass
+        the returned artifactId to run_financial_python, where the file is named
+        transactions.csv. Exporting only prepares the data; it does not perform
+        the requested calculation or model. After this succeeds, call
+        run_financial_python before answering the computation request.
+
+        Args:
+            start_date: Earliest transaction date in YYYY-MM-DD format.
+            end_date: Latest transaction date in YYYY-MM-DD format.
+            limit: Maximum rows to export, from 1 to 2000.
+        """
+        columns, rows = _service().transactions_csv(start_date, end_date, limit)
+        output = StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+        artifact = artifacts.put(
+            filename="transactions.csv",
+            content_type="text/csv",
+            data=output.getvalue().encode("utf-8"),
+        )
+        return {
+            "artifactId": artifact.artifact_id,
+            "filename": artifact.filename,
+            "rowCount": len(rows),
+            "columns": columns,
+            "sizeBytes": artifact.size_bytes,
+            "warning": None if rows else "The exported transaction file has no rows.",
+        }
+
+    return export_transactions_csv
