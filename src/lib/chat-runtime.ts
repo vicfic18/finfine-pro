@@ -1,3 +1,5 @@
+import outputs from '../../amplify_outputs.json';
+
 const DEFAULT_TIMEOUT_MS = 100_000;
 const MAX_TIMEOUT_MS = 120_000;
 
@@ -9,9 +11,20 @@ export function runtimeConfigError(message: string): RuntimeConfigError {
   return error;
 }
 
-export function runtimeEndpoint(path = ''): string {
+function resolveConfiguredRuntimeUrl(): string {
   const configuredUrl = process.env.FINFINE_AGENT_RUNTIME_URL?.trim();
-  if (!configuredUrl) throw runtimeConfigError('FINFINE_AGENT_RUNTIME_URL is not configured.');
+  if (configuredUrl) return configuredUrl;
+
+  const customOutputs = (outputs as { custom?: { agentApiUrl?: string } })?.custom;
+  if (customOutputs?.agentApiUrl?.trim()) {
+    return customOutputs.agentApiUrl.trim();
+  }
+
+  throw runtimeConfigError('FINFINE_AGENT_RUNTIME_URL is not configured.');
+}
+
+export function runtimeEndpoint(path = ''): string {
+  const configuredUrl = resolveConfiguredRuntimeUrl();
 
   let endpoint: URL;
   try {

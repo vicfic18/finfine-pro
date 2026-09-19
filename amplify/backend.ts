@@ -266,6 +266,12 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
     GROQ_API_KEY: process.env.GROQ_API_KEY || '',
     MODEL_API_KEY: process.env.MODEL_API_KEY || process.env.GROQ_API_KEY || '',
     FINFINE_ALLOWED_ORIGINS: '*',
+    COGNITO_USER_POOL_ID: backend.auth.resources.userPool.userPoolId,
+    COGNITO_CLIENT_ID: backend.auth.resources.userPoolClient.userPoolClientId,
+    AGENT_SESSION_BUCKET_NAME: backend.storage.resources.bucket.bucketName,
+    AGENT_SESSION_PREFIX: agentSessionPrefix,
+    AGENT_SESSION_RETENTION_DAYS: agentSessionRetentionDays.toString(),
+    AGENT_SESSION_REGION: agentStack.region,
   },
 });
 
@@ -273,6 +279,9 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
 for (const tbl of normalizerTables) {
   tbl.grantReadData(agentLambda);
 }
+
+// Grant read/write permissions on storage bucket for durable chat sessions
+backend.storage.resources.bucket.grantReadWrite(agentLambda);
 
 // Grant invoke permissions on finfine-code-executor
 agentLambda.addToRolePolicy(
