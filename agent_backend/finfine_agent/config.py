@@ -98,7 +98,11 @@ class AgentSettings:
             "CODE_EXECUTOR_FUNCTION_NAME": os.getenv("CODE_EXECUTOR_FUNCTION_NAME"),
         }
         missing = [name for name, value in required.items() if not value]
-        model_api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("MODEL_API_KEY")
+        model_api_key = (
+            os.getenv("OPENROUTER_API_KEY")
+            or os.getenv("GROQ_API_KEY")
+            or os.getenv("MODEL_API_KEY")
+        )
         if not model_api_key:
             missing.append("OPENROUTER_API_KEY")
         if missing:

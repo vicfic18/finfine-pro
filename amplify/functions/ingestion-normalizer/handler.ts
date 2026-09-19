@@ -13,15 +13,15 @@ const CATEGORY_PRIORITY_WEIGHTS: Record<string, number> = {
   STATUTORY_TAX: 1.0, // Non-negotiable legal obligation
   GST_PAYMENT: 1.0,
   TDS_PAYMENT: 1.0,
-  UTILITY: 0.85, // Essential for operational business continuity
+  SALARY: 0.95, // Crucial employee retention & operations
+  LOAN_EMI: 0.92, // Credit rating preservation & non-performing asset risk
+  OPERATING_EXPENSE: 0.9, // Landlord rent & physical plant continuity
+  UTILITY: 0.85, // Electricity & water supply
   UTILITY_BILL: 0.85,
-  SALARY: 0.8, // Crucial employee retention & operations
-  LOAN_EMI: 0.75, // Credit rating preservation
   VENDOR_PAYMENT: 0.7, // Supplier relationships & supply continuity
   VENDOR_BILL: 0.7,
-  CUSTOMER_RECEIPT: 0.6, // Inflow reconciliation
-  CUSTOMER_INVOICE: 0.6,
-  OPERATING_EXPENSE: 0.5, // General business overheads
+  CUSTOMER_RECEIPT: 0.65, // Inflow reconciliation
+  CUSTOMER_INVOICE: 0.65,
   OTHER: 0.3, // Discretionary
 };
 
@@ -275,6 +275,11 @@ export const handler: Handler = async (event) => {
     const category = obl.category || (rawExtraction.documentType === 'INVOICE' ? 'VENDOR_BILL' : 'OTHER');
     const isStatutory = obl.isStatutory ?? (category.startsWith('GST') || category.startsWith('TDS'));
     const priorityWeight = isStatutory ? 1.0 : (CATEGORY_PRIORITY_WEIGHTS[category] ?? 0.7);
+    const dueDate = normalizeDate(obl.dueDate || rawInvoiceDetails?.dueDate);
+    const isOverdue = obl.status === 'OVERDUE' || (obl.type === 'RECEIVABLE' && dueDate < '2026-10-01');
+    const status = isOverdue ? 'OVERDUE' : (obl.status || 'SCHEDULED');
+    const probability = obl.probability != null ? obl.probability : (obl.type === 'RECEIVABLE' ? 0.85 : 0.95);
+    const expectedSettlementDate = obl.expectedSettlementDate ? normalizeDate(obl.expectedSettlementDate) : dueDate;
 
     return {
       id: idx === 0 ? primaryObligationId : randomUUID(),
@@ -284,18 +289,18 @@ export const handler: Handler = async (event) => {
       counterpartyName: obl.counterpartyName || partyName || 'Counterparty',
       statutoryId: obl.statutoryId || (isStatutory ? validatedIds.gstin || validatedIds.pan : null),
       amount,
-      dueDate: normalizeDate(obl.dueDate || rawInvoiceDetails?.dueDate),
+      dueDate,
       type: obl.type === 'RECEIVABLE' ? 'RECEIVABLE' : 'PAYABLE',
       category,
       priorityWeight,
       penaltyRatePerDay: obl.penaltyRatePerDay || (isStatutory ? 0.0005 : 0.0002),
       isStatutory,
-      status: 'SCHEDULED',
+      status,
       supplierId: supplierId || null,
       productId: primaryProductId || null,
       allowPartialPayment: true,
-      expectedSettlementDate: normalizeDate(obl.dueDate || rawInvoiceDetails?.dueDate),
-      probability: 0.95,
+      expectedSettlementDate,
+      probability,
       confidence: 'HIGH',
       sourceRecordIds: [documentId],
       createdAt: nowIso,
@@ -429,6 +434,18 @@ export const handler: Handler = async (event) => {
       statementPeriod: rawExtraction.statementPeriod,
       openingBalance: rawExtraction.openingBalance,
       closingBalance: rawExtraction.closingBalance,
+      counterpartyName: normalizedObligations[0]?.counterpartyName || partyName,
+      amount: normalizedObligations[0]?.amount ?? rawInvoiceDetails?.totalAmount,
+      dueDate: normalizedObligations[0]?.dueDate,
+      category: normalizedObligations[0]?.category,
+      counterpartyType:
+        normalizedObligations[0]?.type === 'RECEIVABLE'
+          ? 'CUSTOMER'
+          : normalizedObligations[0]?.isStatutory
+          ? 'TAX_AUTHORITY'
+          : 'VENDOR',
+      invoiceNumber: rawInvoiceDetails?.invoiceNumber,
+      gstin: validatedIds.gstin || normalizedObligations[0]?.statutoryId,
       statutoryIdentifiers: validatedIds,
       modelUsed: event.modelUsed,
       summary: {

@@ -11,32 +11,34 @@ interface ObligationsWidgetProps {
 export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
   const { fixedObligationsTotal, variableObligationsTotal, fixedPercentageOfExpectedInflow, workingCapitalCycle, debtorsReliability } = data;
   const totalCommitments = fixedObligationsTotal + variableObligationsTotal;
-  const fixedShare = totalCommitments > 0 ? Math.round((fixedObligationsTotal / totalCommitments) * 100) : 55;
+  const fixedShare = totalCommitments > 0 ? Math.round((fixedObligationsTotal / totalCommitments) * 100) : 0;
 
   return (
     <div className="space-y-8 divide-y divide-neutral-200">
       
-      {/* 1. Fixed vs. Variable Overhead Breakdown */}
+      {/* 1. Monthly Overhead Breakdown */}
       <div className="pt-2">
         <div className="flex items-baseline justify-between pb-3 border-b border-neutral-100">
           <div>
             <h3 className="font-display font-bold text-xl text-neutral-900">
-              Monthly Obligations
+              Monthly Commitments
             </h3>
             <p className="text-xs text-neutral-500 mt-0.5">
               Fixed costs vs flexible supplier payments
             </p>
           </div>
-          <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2.5 py-1">
-            {fixedPercentageOfExpectedInflow}% of Inflow
-          </span>
+          {fixedPercentageOfExpectedInflow > 0 && (
+            <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2.5 py-1">
+              {fixedPercentageOfExpectedInflow}% of Inflow
+            </span>
+          )}
         </div>
 
-        {/* Minimalist Linear Meter */}
+        {/* Linear Meter */}
         <div className="mt-4">
           <div className="flex justify-between text-xs font-medium text-neutral-600 mb-1.5">
             <span>Fixed: {fixedShare}%</span>
-            <span>Flexible: {100 - fixedShare}%</span>
+            <span>Flexible: {totalCommitments > 0 ? 100 - fixedShare : 0}%</span>
           </div>
           <div className="w-full h-2 bg-neutral-100 flex">
             <div
@@ -45,7 +47,7 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
             />
             <div
               className="bg-neutral-300 h-full transition-all duration-500"
-              style={{ width: `${100 - fixedShare}%` }}
+              style={{ width: `${totalCommitments > 0 ? 100 - fixedShare : 0}%` }}
             />
           </div>
 
@@ -74,7 +76,7 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
         <div className="flex items-baseline justify-between pb-3 border-b border-neutral-100">
           <div>
             <h3 className="font-display font-bold text-xl text-neutral-900">
-              Cash Cycle Speed
+              Cash Cycle
             </h3>
             <p className="text-xs text-neutral-500 mt-0.5">
               Working capital turnaround velocity
@@ -106,10 +108,6 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
             <span className="text-[10px] text-neutral-400 block">DPO</span>
           </div>
         </div>
-
-        <p className="text-xs text-neutral-600 mt-3">
-          Supplier credit terms (33 days) effectively finance customer receivables (26 days).
-        </p>
       </div>
 
       {/* 3. Customer Payment Reliability */}
@@ -117,43 +115,49 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
         <div className="flex items-baseline justify-between pb-3 border-b border-neutral-100">
           <div>
             <h3 className="font-display font-bold text-xl text-neutral-900">
-              Debtor Clearing Realities
+              Debtor Realities
             </h3>
             <p className="text-xs text-neutral-500 mt-0.5">
-              Realistic clearing dates based on past behavior
+              Expected settlement dates based on customer invoices
             </p>
           </div>
         </div>
 
-        <div className="divide-y divide-neutral-100">
-          {debtorsReliability.map((debtor, idx) => (
-            <div key={idx} className="py-3 flex items-center justify-between text-xs">
-              <div className="space-y-0.5">
-                <div className="flex items-center space-x-2">
-                  <span className="font-bold text-sm text-neutral-900">{debtor.name}</span>
-                  <span className="text-[10px] text-neutral-400 uppercase tracking-wider">
-                    {debtor.concentrationPercentage}% share
-                  </span>
+        {debtorsReliability.length === 0 ? (
+          <div className="py-6 text-center text-xs text-neutral-400">
+            No customer invoice receivables currently tracked.
+          </div>
+        ) : (
+          <div className="divide-y divide-neutral-100">
+            {debtorsReliability.map((debtor, idx) => (
+              <div key={idx} className="py-3 flex items-center justify-between text-xs">
+                <div className="space-y-0.5">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-sm text-neutral-900">{debtor.name}</span>
+                    <span className="text-[10px] text-neutral-400 uppercase tracking-wider">
+                      {debtor.concentrationPercentage}% share
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-neutral-500 flex items-center space-x-1.5">
+                    <Clock size={11} className="text-neutral-400" />
+                    <span>Delay: +{debtor.averageDelayDays}d • Est: {debtor.expectedRealisticDate}</span>
+                  </div>
                 </div>
-                <div className="text-[11px] text-neutral-500 flex items-center space-x-1.5">
-                  <Clock size={11} className="text-neutral-400" />
-                  <span>Delay: +{debtor.averageDelayDays}d • Est: {debtor.expectedRealisticDate}</span>
-                </div>
-              </div>
 
-              <div className="text-right">
-                <div className="font-bold text-base font-display text-neutral-900">
-                  ₹{debtor.amountDue.toLocaleString('en-IN')}
-                </div>
-                <div className={`text-[11px] font-semibold ${
-                  debtor.reliabilityScore >= 80 ? 'text-emerald-700' : debtor.reliabilityScore >= 60 ? 'text-amber-700' : 'text-rose-700'
-                }`}>
-                  {debtor.reliabilityScore}% Score
+                <div className="text-right">
+                  <div className="font-bold text-base font-display text-neutral-900">
+                    ₹{debtor.amountDue.toLocaleString('en-IN')}
+                  </div>
+                  <div className={`text-[11px] font-semibold ${
+                    debtor.reliabilityScore >= 80 ? 'text-emerald-700' : debtor.reliabilityScore >= 60 ? 'text-amber-700' : 'text-rose-700'
+                  }`}>
+                    {debtor.reliabilityScore}% Score
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
     </div>

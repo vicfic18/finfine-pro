@@ -1,0 +1,8 @@
+node_modules
+.next
+.amplify
+.git
+public
+agent_backend/.venv
+agent_backend/.pytest_cache
+**/__pycache__

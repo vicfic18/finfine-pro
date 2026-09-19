@@ -1,78 +1,343 @@
 import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import * as fs from 'fs';
 import * as path from 'path';
-import { invalidateDashboardCache } from '@/lib/financial-store';
+import { invalidateDashboardCache, getMerchantSettings } from '@/lib/financial-store';
+import {
+  generateAllSampleDocuments,
+  SAMPLE_DOCUMENTS_REGISTRY,
+} from '../../../../../scripts/generate-sample-data';
 
 const region = process.env.AWS_REGION || 'ap-south-1';
 const bucketName =
   process.env.S3_BUCKET_NAME || 'amplify-finfinepro-vicfic-finfinedocumentstoragebu-nm3ks1cueqmt';
 const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
 
+// Load deployed Lambda & Table ARNs from amplify_outputs.json if available
+let outputsCustom: Record<string, any> = {};
+try {
+  const outputsPath = path.join(process.cwd(), 'amplify_outputs.json');
+  if (fs.existsSync(outputsPath)) {
+    const outputs = JSON.parse(fs.readFileSync(outputsPath, 'utf8'));
+    outputsCustom = outputs.custom || {};
+  }
+} catch (e) {
+  // Non-fatal
+}
+
+const extractorArn =
+  process.env.DOCUMENT_EXTRACTOR_FUNCTION_ARN || outputsCustom.documentExtractorLambdaArn;
+const normalizerArn =
+  process.env.INGESTION_NORMALIZER_FUNCTION_ARN || outputsCustom.ingestionNormalizerLambdaArn;
+
 // Canonical DynamoDB Tables
 const docTableName =
-  process.env.DOCUMENT_RECORD_TABLE_NAME || 'DocumentRecord-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.DOCUMENT_RECORD_TABLE_NAME ||
+  outputsCustom.documentRecordTableName ||
+  'DocumentRecord-ifsueqzwybf6nau7duulv5qweq-NONE';
 const txnTableName =
-  process.env.TRANSACTION_TABLE_NAME || 'Transaction-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.TRANSACTION_TABLE_NAME ||
+  outputsCustom.transactionTableName ||
+  'Transaction-ifsueqzwybf6nau7duulv5qweq-NONE';
 const oblTableName =
-  process.env.OBLIGATION_TABLE_NAME || 'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.OBLIGATION_TABLE_NAME ||
+  outputsCustom.obligationTableName ||
+  'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
 const prodTableName =
-  process.env.PRODUCT_TABLE_NAME || 'Product-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.PRODUCT_TABLE_NAME ||
+  outputsCustom.productTableName ||
+  'Product-ifsueqzwybf6nau7duulv5qweq-NONE';
 const purchaseTableName =
-  process.env.PURCHASE_TABLE_NAME || 'Purchase-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.PURCHASE_TABLE_NAME ||
+  outputsCustom.purchaseTableName ||
+  'Purchase-ifsueqzwybf6nau7duulv5qweq-NONE';
 const purchaseLineItemTableName =
-  process.env.PURCHASE_LINE_ITEM_TABLE_NAME || 'PurchaseLineItem-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.PURCHASE_LINE_ITEM_TABLE_NAME ||
+  outputsCustom.purchaseLineItemTableName ||
+  'PurchaseLineItem-ifsueqzwybf6nau7duulv5qweq-NONE';
 const cashPositionTableName =
-  process.env.CASH_POSITION_TABLE_NAME || 'CashPositionSnapshot-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.CASH_POSITION_TABLE_NAME ||
+  outputsCustom.cashPositionTableName ||
+  'CashPositionSnapshot-ifsueqzwybf6nau7duulv5qweq-NONE';
 const supplierProfileTableName =
-  process.env.SUPPLIER_PROFILE_TABLE_NAME || 'SupplierProfile-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.SUPPLIER_PROFILE_TABLE_NAME ||
+  outputsCustom.supplierProfileTableName ||
+  'SupplierProfile-ifsueqzwybf6nau7duulv5qweq-NONE';
 
 const s3Client = new S3Client({ region });
-const dynamoClient = new DynamoDBClient({ region });
-const docClient = DynamoDBDocumentClient.from(dynamoClient, {
-  marshallOptions: { removeUndefinedValues: true },
-});
+const lambdaClient = new LambdaClient({ region });
+
+async function runDocumentExtractor(payload: any) {
+  if (extractorArn) {
+    try {
+      console.log(`[Ingestion API] Invoking remote AWS Lambda Document Extractor (${extractorArn})...`);
+      const res = await lambdaClient.send(
+        new InvokeCommand({
+          FunctionName: extractorArn,
+          InvocationType: 'RequestResponse',
+          Payload: Buffer.from(JSON.stringify(payload)),
+        })
+      );
+      if (res.Payload) {
+        const payloadStr = Buffer.from(res.Payload).toString('utf-8');
+        const parsed = JSON.parse(payloadStr);
+        if (res.FunctionError) {
+          console.warn('[Ingestion API] Remote Lambda returned error:', parsed);
+          throw new Error(parsed.errorMessage || 'Remote Lambda execution failed');
+        }
+        console.log('[Ingestion API] Remote Lambda Document Extractor executed successfully.');
+        return parsed;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[Ingestion API] Remote Lambda invocation skipped/failed (${err.message}). Executing serverless extractor handler directly.`
+      );
+    }
+  }
+
+  const { handler: extractorHandler } = await import(
+    '../../../../../amplify/functions/document-extractor/handler'
+  );
+  return await (extractorHandler as any)(payload);
+}
+
+async function runIngestionNormalizer(payload: any) {
+  if (normalizerArn) {
+    try {
+      console.log(`[Ingestion API] Invoking remote AWS Lambda Ingestion Normalizer (${normalizerArn})...`);
+      const res = await lambdaClient.send(
+        new InvokeCommand({
+          FunctionName: normalizerArn,
+          InvocationType: 'RequestResponse',
+          Payload: Buffer.from(JSON.stringify(payload)),
+        })
+      );
+      if (res.Payload) {
+        const payloadStr = Buffer.from(res.Payload).toString('utf-8');
+        const parsed = JSON.parse(payloadStr);
+        if (res.FunctionError) {
+          console.warn('[Ingestion API] Remote Normalizer Lambda returned error:', parsed);
+          throw new Error(parsed.errorMessage || 'Remote Normalizer Lambda failed');
+        }
+        console.log('[Ingestion API] Remote Lambda Ingestion Normalizer executed successfully.');
+        return parsed;
+      }
+    } catch (err: any) {
+      console.warn(
+        `[Ingestion API] Remote Normalizer Lambda invocation skipped/failed (${err.message}). Executing serverless normalizer handler directly.`
+      );
+    }
+  }
+
+  const { handler: normalizerHandler } = await import(
+    '../../../../../amplify/functions/ingestion-normalizer/handler'
+  );
+  return await (normalizerHandler as any)(payload);
+}
+
+/**
+ * Ingests a single PDF file buffer into S3 and runs the extractor + normalizer pipeline
+ */
+async function ingestPdfBuffer(
+  fileBuffer: Buffer,
+  fileName: string,
+  docType: 'BANK_STATEMENT' | 'INVOICE' | 'GST_CHALLAN',
+  manualMetadata: any = {}
+) {
+  const timestamp = Date.now() + Math.floor(Math.random() * 1000);
+  const documentId = docType === 'BANK_STATEMENT' ? `stmt-${timestamp}` : `inv-${timestamp}`;
+  const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const s3Key = `public/tenants/${tenantId}/raw/${documentId}-${sanitizedFileName}`;
+
+  // 1. Upload to S3
+  await s3Client.send(
+    new PutObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+      Body: fileBuffer,
+      ContentType: 'application/pdf',
+      Metadata: {
+        tenantId,
+        documentId,
+        documentType: docType,
+      },
+    })
+  );
+
+  // 2. Set Env vars
+  process.env.DOCUMENT_RECORD_TABLE_NAME = docTableName;
+  process.env.TRANSACTION_TABLE_NAME = txnTableName;
+  process.env.OBLIGATION_TABLE_NAME = oblTableName;
+  process.env.PRODUCT_TABLE_NAME = prodTableName;
+  process.env.PURCHASE_TABLE_NAME = purchaseTableName;
+  process.env.PURCHASE_LINE_ITEM_TABLE_NAME = purchaseLineItemTableName;
+  process.env.CASH_POSITION_TABLE_NAME = cashPositionTableName;
+  process.env.SUPPLIER_PROFILE_TABLE_NAME = supplierProfileTableName;
+
+  // 3. Extract & Normalize
+  const extractOutput = await runDocumentExtractor({
+    bucket: bucketName,
+    key: s3Key,
+    tenantId,
+    documentId,
+    documentType: docType,
+    manualMetadata,
+  });
+
+  const pipelineResult = await runIngestionNormalizer(extractOutput);
+  return { documentId, s3Key, fileName: sanitizedFileName, pipelineResult };
+}
+
+/**
+ * Ingests the complete MSME enterprise test dataset ONLY through real PDF documents
+ * processed via Amazon S3 -> Document Extractor -> Ingestion Normalizer -> DynamoDB.
+ * Absolutely ZERO direct database seeding.
+ */
+async function ingestCompleteEnterpriseSuite() {
+  const settings = await getMerchantSettings(tenantId);
+  const businessName = settings.businessName || 'My Business';
+
+  // Ensure all sample PDFs exist on disk and reflect the business name
+  await generateAllSampleDocuments(businessName);
+
+  const sampleDir = path.join(process.cwd(), 'sample_data');
+  const results = [];
+
+  for (const item of SAMPLE_DOCUMENTS_REGISTRY) {
+    const pdfPath = path.join(sampleDir, item.fileName);
+    if (fs.existsSync(pdfPath)) {
+      const pdfBuffer = fs.readFileSync(pdfPath);
+      console.log(`[Ingestion Pipeline] Ingesting PDF: ${item.fileName} (${item.docType})...`);
+      const res = await ingestPdfBuffer(pdfBuffer, item.fileName, item.docType);
+      results.push({
+        id: item.id,
+        fileName: item.fileName,
+        documentId: res.documentId,
+        summary: res.pipelineResult?.summary,
+      });
+    }
+  }
+
+  invalidateDashboardCache();
+  return results;
+}
+
+export async function GET() {
+  return NextResponse.json({
+    availableSampleDocuments: SAMPLE_DOCUMENTS_REGISTRY.map((d) => ({
+      id: d.id,
+      displayName: d.displayName,
+      docType: d.docType,
+      fileName: d.fileName,
+      description: d.description,
+    })),
+  });
+}
 
 export async function POST(request: Request) {
   try {
-    let fileBuffer: Buffer;
-    let fileName: string;
-    let fileType = 'application/pdf';
-    let docType = 'BANK_STATEMENT';
-    let manualMetadata: any = {};
-
     const contentType = request.headers.get('content-type') || '';
 
+    // -------------------------------------------------------------------------
+    // A. JSON Payload (Quick Sample Ingestion)
+    // -------------------------------------------------------------------------
     if (contentType.includes('application/json')) {
       const body = await request.json();
 
-      if (body.useSample) {
-        // Load the bundled sample UPI statement PDF
-        const samplePdfPath = path.join(process.cwd(), 'sample_data/sample_upi_bank_statement.pdf');
-        if (!fs.existsSync(samplePdfPath)) {
-          throw new Error('Sample statement PDF not found at ' + samplePdfPath);
+      if (body.useSample || body.sampleSet === 'COMPLETE') {
+        const sampleType = body.sampleType || 'COMPLETE';
+        const sampleDir = path.join(process.cwd(), 'sample_data');
+        const settings = await getMerchantSettings(tenantId);
+        const businessName = settings.businessName || 'My Business';
+
+        if (sampleType === 'COMPLETE' || !body.sampleType) {
+          console.log('[Ingestion API] Ingesting complete MSME PDF test suite (14 documents)...');
+          const results = await ingestCompleteEnterpriseSuite();
+          invalidateDashboardCache();
+
+          return NextResponse.json({
+            success: true,
+            sampleType: 'COMPLETE',
+            documentsProcessed: results.length,
+            message: `All ${results.length} MSME sample PDF documents parsed, extracted, and normalized through Amazon S3 & DynamoDB pipeline!`,
+            featuresActivated: [
+              'Cash Runway & Spendable Liquidity Ribbon',
+              'Statutory Tax Lockbox (GST + TDS + EPFO)',
+              '60-Day Cash Flow Trajectory with Itemized Day Events',
+              'Risk Calendar Heatmap & Paginated Schedule Table',
+              'What-If Cash Simulator with Conflict Detection',
+              'Statutory Rails (GSTR-3B & Challan 281 Countdowns)',
+              'Obligations View (Fixed Overhead vs Trade Suppliers & Debtor Realities)',
+              'Working Capital Cycle (DSO, DIO, DPO, CCC)',
+              'Entity Relationship Graph (@xyflow/react)',
+            ],
+            details: results,
+          });
         }
-        fileBuffer = fs.readFileSync(samplePdfPath);
-        fileName = `hdfc_current_account_oct2026_${Date.now()}.pdf`;
-        docType = 'BANK_STATEMENT';
-      } else if (body.rawBase64) {
-        fileBuffer = Buffer.from(body.rawBase64, 'base64');
-        fileName = body.fileName || `doc_${Date.now()}.pdf`;
-        fileType = body.fileType || 'application/pdf';
-        docType = body.documentType || 'BANK_STATEMENT';
-        manualMetadata = body.metadata || {};
-      } else {
-        throw new Error('Unsupported JSON payload. Provide useSample: true or rawBase64.');
+
+        // Single specific sample document from registry
+        const matched = SAMPLE_DOCUMENTS_REGISTRY.find(
+          (d) => d.id === sampleType || d.fileName === sampleType
+        );
+
+        if (!matched) {
+          return NextResponse.json(
+            { error: `Unknown sample document type: "${sampleType}"` },
+            { status: 400 }
+          );
+        }
+
+        const samplePdfPath = path.join(sampleDir, matched.fileName);
+        if (!fs.existsSync(samplePdfPath)) {
+          await matched.generator({ businessName, outputPath: samplePdfPath });
+        }
+
+        const fileBuffer = fs.readFileSync(samplePdfPath);
+        const result = await ingestPdfBuffer(fileBuffer, matched.fileName, matched.docType);
+        invalidateDashboardCache();
+
+        return NextResponse.json({
+          success: true,
+          sampleType: matched.id,
+          documentId: result.documentId,
+          fileName: result.fileName,
+          message: `Sample PDF "${matched.displayName}" parsed & normalized through pipeline into DynamoDB.`,
+          pipelineSummary: result.pipelineResult?.summary || null,
+        });
       }
-    } else if (contentType.includes('multipart/form-data')) {
+
+      if (body.rawBase64) {
+        const fileBuffer = Buffer.from(body.rawBase64, 'base64');
+        const fileName = body.fileName || `doc_${Date.now()}.pdf`;
+        const docType = body.documentType || 'BANK_STATEMENT';
+        const manualMetadata = body.metadata || {};
+
+        const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
+        invalidateDashboardCache();
+
+        return NextResponse.json({
+          success: true,
+          documentId: result.documentId,
+          fileName: result.fileName,
+          pipelineSummary: result.pipelineResult?.summary || null,
+        });
+      }
+
+      throw new Error('Unsupported JSON payload. Provide useSample: true or rawBase64.');
+    }
+
+    // -------------------------------------------------------------------------
+    // B. Multipart/form-data (Manual File Upload from Computer)
+    // -------------------------------------------------------------------------
+    if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
-      docType = (formData.get('documentType') as string) || 'BANK_STATEMENT';
+      const docType = ((formData.get('documentType') as string) || 'BANK_STATEMENT') as 'BANK_STATEMENT' | 'INVOICE';
       const customVendor = formData.get('counterpartyName') as string | null;
       const customAmount = formData.get('amount') as string | null;
 
+      let manualMetadata: any = {};
       if (customVendor || customAmount) {
         manualMetadata = {
           counterpartyName: customVendor,
@@ -88,92 +353,27 @@ export async function POST(request: Request) {
       }
 
       const arrayBuffer = await file.arrayBuffer();
-      fileBuffer = Buffer.from(arrayBuffer);
-      fileName = file.name || `upload_${Date.now()}`;
-      fileType = file.type || 'application/pdf';
-    } else {
-      return NextResponse.json({ error: 'Unsupported Content-Type' }, { status: 400 });
+      const fileBuffer = Buffer.from(arrayBuffer);
+      const fileName = file.name || `upload_${Date.now()}`;
+
+      const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
+      invalidateDashboardCache();
+
+      return NextResponse.json({
+        success: true,
+        documentId: result.documentId,
+        fileName: result.fileName,
+        s3Key: result.s3Key,
+        documentType: docType,
+        message:
+          docType === 'BANK_STATEMENT'
+            ? `Successfully uploaded to S3 and normalized bank statement into DynamoDB ledger.`
+            : `Successfully uploaded bill to S3 and persisted canonical obligation records.`,
+        pipelineSummary: result.pipelineResult?.summary || null,
+      });
     }
 
-    const timestamp = Date.now();
-    const documentId = docType === 'BANK_STATEMENT' ? `stmt-${timestamp}` : `inv-${timestamp}`;
-    const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const s3Key = `public/tenants/${tenantId}/raw/${documentId}-${sanitizedFileName}`;
-
-    console.log(`[Ingestion API] 1. Uploading ${fileBuffer.length} bytes to Amazon S3: s3://${bucketName}/${s3Key}`);
-
-    // 1. Upload to Amazon S3
-    await s3Client.send(
-      new PutObjectCommand({
-        Bucket: bucketName,
-        Key: s3Key,
-        Body: fileBuffer,
-        ContentType: fileType,
-        Metadata: {
-          tenantId,
-          documentId,
-          documentType: docType,
-        },
-      })
-    );
-
-    console.log('[Ingestion API] S3 Upload successful. Invoking Document Extraction & Normalization pipeline...');
-
-    // 2. Set environment variables for Lambda handlers
-    process.env.DOCUMENT_RECORD_TABLE_NAME = docTableName;
-    process.env.TRANSACTION_TABLE_NAME = txnTableName;
-    process.env.OBLIGATION_TABLE_NAME = oblTableName;
-    process.env.PRODUCT_TABLE_NAME = prodTableName;
-    process.env.PURCHASE_TABLE_NAME = purchaseTableName;
-    process.env.PURCHASE_LINE_ITEM_TABLE_NAME = purchaseLineItemTableName;
-    process.env.CASH_POSITION_TABLE_NAME = cashPositionTableName;
-    process.env.SUPPLIER_PROFILE_TABLE_NAME = supplierProfileTableName;
-
-    // 3. Execute Document Extractor & Ingestion Normalizer
-    const { handler: extractorHandler } = await import(
-      '../../../../../amplify/functions/document-extractor/handler'
-    );
-    const { handler: normalizerHandler } = await import(
-      '../../../../../amplify/functions/ingestion-normalizer/handler'
-    );
-
-    const extractOutput = await (extractorHandler as any)({
-      bucket: bucketName,
-      key: s3Key,
-      tenantId,
-      documentId,
-      documentType: docType,
-      manualMetadata,
-    });
-
-    const pipelineResult = await (normalizerHandler as any)(extractOutput);
-
-    const extractedCount =
-      (pipelineResult?.summary?.transactionCount || 0) +
-      (pipelineResult?.summary?.obligationCount || 0) +
-      (pipelineResult?.summary?.productCount || 0) +
-      (pipelineResult?.summary?.purchaseCount || 0);
-
-    console.log(
-      `[Ingestion API] Successfully processed document ${documentId}: ${extractedCount} entities normalized into DynamoDB.`
-    );
-
-    // 4. Invalidate memory cache so dashboard instantly fetches fresh canonical metrics
-    invalidateDashboardCache();
-
-    return NextResponse.json({
-      success: true,
-      documentId,
-      fileName: sanitizedFileName,
-      s3Key,
-      documentType: docType,
-      extractedEntityCount: extractedCount,
-      message:
-        docType === 'BANK_STATEMENT'
-          ? `Successfully uploaded to S3 and normalized ${pipelineResult?.summary?.transactionCount || 0} bank transactions into DynamoDB ledger.`
-          : `Successfully uploaded bill to S3 and persisted canonical Product, Purchase, SupplierProfile, and Obligation records.`,
-      pipelineSummary: pipelineResult?.summary || null,
-    });
+    return NextResponse.json({ error: 'Unsupported Content-Type' }, { status: 400 });
   } catch (err: any) {
     console.error('Failed to ingest document:', err);
     return NextResponse.json(

@@ -11,6 +11,33 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Duration } from 'aws-cdk-lib';
+import * as path from 'path';
+import * as fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Helper to load env variables from local files during CDK synthesis
+function loadEnvFile(filePath: string) {
+  if (fs.existsSync(filePath)) {
+    const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const [k, ...v] = trimmed.split('=');
+        const key = k.trim();
+        const val = v.join('=').trim();
+        if (key && !process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
+
+loadEnvFile(path.join(__dirname, '../agent_backend/.env'));
+loadEnvFile(path.join(__dirname, '../.env'));
 
 /**
  * Define Amplify Gen 2 Backend with Document Ingestion & Extraction Pipeline
@@ -162,12 +189,86 @@ const s3UploadRule = new events.Rule(ingestionStack, 'S3DocumentUploadRule', {
 
 s3UploadRule.addTarget(new targets.SfnStateMachine(ingestionStateMachine));
 
-// 7. Add Custom Outputs to amplify_outputs.json
+// 7. Scale-to-Zero Serverless Agent Backend Stack
+const agentStack = backend.createStack('AgentBackendStack');
+
+const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBackendFunction', {
+  code: lambda.DockerImageCode.fromImageAsset(
+    path.join(__dirname, '..'),
+    {
+      file: 'agent_backend/Dockerfile',
+      exclude: [
+        'node_modules',
+        '.next',
+        '.amplify',
+        '.git',
+        'public',
+        'agent_backend/.venv',
+        'agent_backend/.pytest_cache',
+        '**/__pycache__',
+      ],
+    }
+  ),
+  memorySize: 1024,
+  timeout: Duration.seconds(180),
+  environment: {
+    FINFINE_TENANT_ID: 'msme-001',
+    DOCUMENT_RECORD_TABLE_NAME: docTable.tableName,
+    TRANSACTION_TABLE_NAME: txnTable.tableName,
+    OBLIGATION_TABLE_NAME: oblTable.tableName,
+    PRODUCT_TABLE_NAME: prodTable.tableName,
+    PURCHASE_TABLE_NAME: purchaseTable.tableName,
+    PURCHASE_LINE_ITEM_TABLE_NAME: purchaseLineItemTable.tableName,
+    SALE_TABLE_NAME: saleTable.tableName,
+    SALE_LINE_ITEM_TABLE_NAME: saleLineItemTable.tableName,
+    CASH_POSITION_TABLE_NAME: cashTable.tableName,
+    SUPPLIER_PROFILE_TABLE_NAME: supplierTable.tableName,
+    SUPPLIER_PRODUCT_TERMS_TABLE_NAME: supplierTermsTable.tableName,
+    MERCHANT_SETTINGS_TABLE_NAME: settingsTable.tableName,
+    RECURRING_EXPENSE_TABLE_NAME: recurringTable.tableName,
+    CODE_EXECUTOR_FUNCTION_NAME: 'finfine-code-executor',
+    CODE_EXECUTOR_REGION: agentStack.region,
+    MODEL_BASE_URL: process.env.MODEL_BASE_URL || 'https://api.groq.com/openai/v1',
+    MODEL_ID: process.env.MODEL_ID || 'qwen/qwen3.8-27b',
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.MODEL_API_KEY || '',
+    GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+    MODEL_API_KEY: process.env.MODEL_API_KEY || process.env.GROQ_API_KEY || '',
+    FINFINE_ALLOWED_ORIGINS: '*',
+  },
+});
+
+// Grant read permissions on all canonical tables to agent
+for (const tbl of normalizerTables) {
+  tbl.grantReadData(agentLambda);
+}
+
+// Grant invoke permissions on finfine-code-executor
+agentLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['lambda:InvokeFunction'],
+    resources: [`arn:aws:lambda:${agentStack.region}:${agentStack.account}:function:finfine-code-executor`],
+  })
+);
+
+// Create Lambda Function URL with CORS
+const agentFunctionUrl = agentLambda.addFunctionUrl({
+  authType: lambda.FunctionUrlAuthType.NONE,
+  invokeMode: lambda.InvokeMode.BUFFERED,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [lambda.HttpMethod.ALL],
+    allowedHeaders: ['*'],
+  },
+});
+
+// 8. Add Custom Outputs to amplify_outputs.json
 backend.addOutput({
   custom: {
     ingestionStateMachineArn: ingestionStateMachine.stateMachineArn,
     documentExtractorLambdaArn: backend.documentExtractor.resources.lambda.functionArn,
     ingestionNormalizerLambdaArn: backend.ingestionNormalizer.resources.lambda.functionArn,
+    agentApiUrl: agentFunctionUrl.url,
+    agentFunctionArn: agentLambda.functionArn,
     documentRecordTableName: docTable.tableName,
     transactionTableName: txnTable.tableName,
     obligationTableName: oblTable.tableName,

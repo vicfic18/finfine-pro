@@ -194,51 +194,61 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
-            {paginatedItems.map((item, idx) => (
-              <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
-                <td className="py-3 px-4 font-mono text-neutral-600 font-medium">
-                  {item.dateFormatted}
-                </td>
-                <td className="py-3 px-4 font-medium text-neutral-900">
-                  {item.name}
-                </td>
-                <td className="py-3 px-4 text-right font-display font-bold text-sm text-neutral-900">
-                  {item.priceFormatted}
+            {tableItems.length === 0 ? (
+              <tr>
+                <td colSpan={3} className="py-6 px-4 text-center text-neutral-400 text-xs">
+                  No scheduled payment obligations recorded for this month.
                 </td>
               </tr>
-            ))}
+            ) : (
+              paginatedItems.map((item, idx) => (
+                <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
+                  <td className="py-3 px-4 font-mono text-neutral-600 font-medium">
+                    {item.dateFormatted}
+                  </td>
+                  <td className="py-3 px-4 font-medium text-neutral-900">
+                    {item.name}
+                  </td>
+                  <td className="py-3 px-4 text-right font-display font-bold text-sm text-neutral-900">
+                    {item.priceFormatted}
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
 
       {/* Minimalist Pagination Bar (Touching footer cell) */}
-      <div className="px-4 py-2.5 bg-neutral-50 flex items-center justify-between text-xs text-neutral-600 font-medium">
-        <span>
-          Showing {startIndex + 1}–{Math.min(startIndex + pageSize, tableItems.length)} of {tableItems.length}
-        </span>
-
-        <div className="flex items-center space-x-1">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-            className="p-1 border border-neutral-200 bg-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-neutral-100 transition-colors"
-            title="Previous page"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <span className="px-2 font-mono">
-            {currentPage} / {totalPages}
+      {tableItems.length > 0 && (
+        <div className="px-4 py-2.5 bg-neutral-50 flex items-center justify-between text-xs text-neutral-600 font-medium">
+          <span>
+            Showing {startIndex + 1}–{Math.min(startIndex + pageSize, tableItems.length)} of {tableItems.length}
           </span>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-            className="p-1 border border-neutral-200 bg-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-neutral-100 transition-colors"
-            title="Next page"
-          >
-            <ChevronRight size={14} />
-          </button>
+
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="p-1 border border-neutral-200 bg-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-neutral-100 transition-colors"
+              title="Previous page"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="px-2 font-mono">
+              {currentPage} / {Math.max(1, totalPages)}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages || totalPages <= 1}
+              className="p-1 border border-neutral-200 bg-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-neutral-100 transition-colors"
+              title="Next page"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
     </div>
   );

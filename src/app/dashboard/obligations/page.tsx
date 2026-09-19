@@ -44,10 +44,10 @@ export default function ObligationsPage() {
           FinFine Pro
         </div>
         <h1 className="font-display font-bold text-4xl sm:text-5xl text-neutral-900 tracking-tight">
-          Periodic Events
+          Obligations
         </h1>
         <p className="text-sm text-neutral-500 mt-2 max-w-2xl">
-          Track fixed store overheads, supplier payables, debtor clearance velocity, and cash conversion cycles.
+          Track fixed overheads, supplier payables, debtor clearance velocity, and cash conversion cycles.
         </p>
       </header>
 

@@ -27,22 +27,22 @@ from finfine_agent.tools import (
 
 def create_model(settings: AgentSettings) -> OpenAIModel:
     """Create an OpenAI-compatible model for Strands."""
+    params: dict[str, Any] = {
+        "max_tokens": settings.model_max_tokens,
+        "temperature": settings.model_temperature,
+    }
+    if "groq.com" not in settings.model_base_url.lower():
+        params["extra_body"] = {
+            "reasoning": {"enabled": False, "exclude": True}
+        }
+
     return OpenAIModel(
         client_args={
             "api_key": settings.model_api_key,
             "base_url": settings.model_base_url,
         },
         model_id=settings.model_id,
-        params={
-            "max_tokens": settings.model_max_tokens,
-            "temperature": settings.model_temperature,
-            # OpenRouter reasoning metadata cannot be replayed by Strands in a
-            # later Chat Completions tool-call turn. The model may still reason;
-            # this keeps provider-specific reasoning details out of the reply.
-            "extra_body": {
-                "reasoning": {"enabled": False, "exclude": True}
-            },
-        },
+        params=params,
     )
 
 

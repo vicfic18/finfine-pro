@@ -28,6 +28,7 @@ def test_agent_settings_reports_missing_openrouter_key(monkeypatch) -> None:
     monkeypatch.setattr(config_module, "_load_local_environment", lambda: None)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
     monkeypatch.setenv("CODE_EXECUTOR_FUNCTION_NAME", "test-executor")
 
     with pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"):

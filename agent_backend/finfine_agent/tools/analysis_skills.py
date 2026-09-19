@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,18 @@ SKILL_NAMES = (
 
 
 def _default_skills_directory() -> Path:
-    return Path(__file__).resolve().parents[3] / "skills"
+    env_path = os.getenv("FINFINE_SKILLS_DIRECTORY")
+    if env_path:
+        return Path(env_path)
+    candidates = [
+        Path("/var/task/skills"),
+        Path(__file__).resolve().parents[2] / "skills",
+        Path(__file__).resolve().parents[3] / "skills",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[-1]
 
 
 def create_analysis_skill_tool(skills_directory: Path | None = None) -> Any:

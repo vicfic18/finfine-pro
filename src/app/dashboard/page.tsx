@@ -56,18 +56,18 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col max-w-7xl mx-auto w-full font-sans bg-white border border-neutral-200 divide-y divide-neutral-200">
       
-      {/* 1. Header: FinFine Pro in Gilroy Bold & Business Name in Bold Cirka */}
+      {/* 1. Header: FinFine Pro & Dynamic Business Name */}
       <header className="p-6 sm:p-8 bg-white">
         <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
           FinFine Pro
         </div>
         <h1 className="font-display font-bold text-4xl sm:text-5xl lg:text-6xl text-neutral-900 tracking-tight leading-none">
-          Shree Ganesh Enterprises
+          {data.businessName || 'My Business'}
         </h1>
       </header>
 
-      {/* 2. Primary Solvency & Executive Health Ribbon (Touching Grid) */}
-      <section aria-label="Executive Health Ribbon">
+      {/* 2. Primary Solvency Ribbon */}
+      <section aria-label="Solvency Ribbon">
         <TopRibbon
           data={data}
           simulatedExpense={unplannedExpense}

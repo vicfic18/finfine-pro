@@ -1,27 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import EntityMindmapGraph from '@/components/ingestion/EntityMindmapGraph';
 import DocumentUploadZone from '@/components/ingestion/DocumentUploadZone';
 import BankStatementsTable from '@/components/ingestion/BankStatementsTable';
 import BillsInvoicesTable from '@/components/ingestion/BillsInvoicesTable';
 import DocumentDetailModal from '@/components/ingestion/DocumentDetailModal';
-import {
-  FileSpreadsheet,
-  Receipt,
-  UploadCloud,
-  CheckCircle2,
-  RefreshCw,
-  Building2,
-  Layers,
-  ArrowDownUp,
-} from 'lucide-react';
+import EntityGraphView from '@/components/ingestion/EntityGraphView';
+import { RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import type { BankStatementDoc, BillInvoiceDoc } from '@/app/api/ingestion/documents/route';
 
 export default function IngestionPage() {
   const [bankStatements, setBankStatements] = useState<BankStatementDoc[]>([]);
   const [billsAndInvoices, setBillsAndInvoices] = useState<BillInvoiceDoc[]>([]);
+  const [businessName, setBusinessName] = useState<string>('My Business');
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [selectedDoc, setSelectedDoc] = useState<(BankStatementDoc | BillInvoiceDoc) | null>(null);
@@ -29,11 +21,21 @@ export default function IngestionPage() {
   const fetchDocuments = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const res = await fetch('/api/ingestion/documents');
-      if (!res.ok) throw new Error('Failed to load documents');
-      const data = await res.json();
-      setBankStatements(data.bankStatements || []);
-      setBillsAndInvoices(data.billsAndInvoices || []);
+      const [docRes, settingsRes] = await Promise.all([
+        fetch('/api/ingestion/documents'),
+        fetch('/api/dashboard/settings'),
+      ]);
+
+      if (docRes.ok) {
+        const data = await docRes.json();
+        setBankStatements(data.bankStatements || []);
+        setBillsAndInvoices(data.billsAndInvoices || []);
+      }
+
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        if (settings.businessName) setBusinessName(settings.businessName);
+      }
     } catch (err) {
       console.error('Failed to load ingestion documents:', err);
     } finally {
@@ -49,17 +51,17 @@ export default function IngestionPage() {
   return (
     <div className="flex flex-col max-w-7xl mx-auto w-full font-sans pb-20 bg-white space-y-10">
       
-      {/* 1. Header & Quick Stat Counters */}
+      {/* 1. Header */}
       <header className="pt-2 pb-6 border-b border-neutral-200 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <span className="text-xs font-semibold uppercase tracking-widest text-neutral-400 block mb-1">
-            Data Pipelines & Entity Ingestion
+            Documents
           </span>
           <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight">
-            Document Ingestion & Entity Graph
+            Document Ingestion
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 mt-1 max-w-2xl font-sans">
-            Continuous ingestion of HDFC/ICICI bank statements, vendor bills, customer invoices, and statutory tax challans linked to real AWS storage.
+            Upload bank statements, invoices, and statutory challans to feed your live cash calculations.
           </p>
         </div>
 
@@ -70,22 +72,17 @@ export default function IngestionPage() {
             className="px-3.5 py-2 text-xs font-semibold bg-white border border-neutral-300 hover:bg-neutral-100 flex items-center space-x-1.5 transition-colors text-neutral-700"
           >
             <RefreshCw size={13} className={clsx(refreshing && "animate-spin text-neutral-900")} />
-            <span>{refreshing ? 'Syncing DynamoDB...' : 'Refresh Records'}</span>
+            <span>{refreshing ? 'Syncing...' : 'Refresh Records'}</span>
           </button>
         </div>
       </header>
 
-      {/* 2. Top-Level Entity Mindmap Graph */}
-      <section aria-label="Entity Mindmap Graph">
-        <EntityMindmapGraph />
-      </section>
-
-      {/* 3. Document Upload Center (Amazon S3 + Bedrock Pipeline) */}
-      <section aria-label="Document Upload Center">
+      {/* 2. Top-Level Document Upload Center (Moved to Top) */}
+      <section aria-label="Upload Center">
         <DocumentUploadZone onUploadSuccess={() => fetchDocuments(false)} />
       </section>
 
-      {/* 4. Split Ingestion Document Tables */}
+      {/* 3. Document Tables */}
       <section aria-label="Ingested Documents Display" className="space-y-10">
         
         {/* Table 1: Bank Statements */}
@@ -93,14 +90,14 @@ export default function IngestionPage() {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-                Source of Truth
+                Treasury
               </span>
               <h2 className="font-display font-bold text-xl sm:text-2xl text-neutral-900 tracking-tight">
-                Bank Statements Ledger
+                Bank Statements
               </h2>
             </div>
             <span className="text-xs text-neutral-500 font-sans">
-              Auto-reconciled with UPI & NEFT payment rails
+              Reconciled payment rails
             </span>
           </div>
 
@@ -110,19 +107,19 @@ export default function IngestionPage() {
           />
         </div>
 
-        {/* Table 2: External Bills and Invoices */}
+        {/* Table 2: Bills and Invoices */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-                Trade & Statutory Obligations
+                Trade
               </span>
               <h2 className="font-display font-bold text-xl sm:text-2xl text-neutral-900 tracking-tight">
-                External Bills & Invoices
+                Bills and Invoices
               </h2>
             </div>
             <span className="text-xs text-neutral-500 font-sans">
-              Matched against bank statement debits and credits
+              Payables and receivables
             </span>
           </div>
 
@@ -132,6 +129,15 @@ export default function IngestionPage() {
           />
         </div>
 
+      </section>
+
+      {/* 4. Entity Graph View (Actual Graph Component) */}
+      <section aria-label="Entity Graph">
+        <EntityGraphView
+          businessName={businessName}
+          bankStatements={bankStatements}
+          billsAndInvoices={billsAndInvoices}
+        />
       </section>
 
       {/* 5. Document Details Modal */}

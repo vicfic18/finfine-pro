@@ -38,10 +38,10 @@ export default function ScenarioSimulator({
       <div className="flex items-baseline justify-between p-4 sm:p-6 bg-white">
         <div>
           <h3 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            What-If Cash Simulator
+            Cash Simulator
           </h3>
           <p className="text-xs text-neutral-500 mt-0.5">
-            Test sudden expenses or customer delays before committing
+            Test sudden expenses or customer payment delays
           </p>
         </div>
 
@@ -128,7 +128,7 @@ export default function ScenarioSimulator({
 
           {hasConflict && (
             <div className="text-xs text-orange-600 font-semibold">
-              Conflict: GST or payroll liability breach
+              Warning: Projected runway falls below safe operating buffer
             </div>
           )}
         </div>
@@ -138,8 +138,8 @@ export default function ScenarioSimulator({
           <span className="font-bold text-neutral-900 uppercase tracking-wider block mb-1">Mitigation Strategy:</span>
           <p className="leading-relaxed">
             {unplannedExpense > 0 || delayDays > 0
-              ? `1. Defer supplier 'Sharma Textiles' (₹35,000) by 6 days (Zero penalty risk agreed).
-2. Settle ₹${Math.round(unplannedExpense * 0.5).toLocaleString('en-IN')} upfront, remainder post-debtor realization on Day 14.`
+              ? `1. Consider splitting unexpected outflow of ₹${unplannedExpense.toLocaleString('en-IN')} across multiple payment cycles.
+2. Follow up on receivables due in the next 14 days before committing new capital.`
               : 'Operational balance is currently stable. Adjust sliders to simulate cash stress and test solvency thresholds.'}
           </p>
         </div>

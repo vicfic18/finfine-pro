@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth';
 import Link from 'next/link';
-import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud, Settings } from 'lucide-react';
 import clsx from 'clsx';
 
 export default function DashboardLayout({
@@ -62,6 +62,7 @@ export default function DashboardLayout({
     { name: 'Documents', href: '/dashboard/ingestion', icon: UploadCloud },
     { name: 'Obligations', href: '/dashboard/obligations', icon: CalendarClock },
     { name: 'Chat', href: '/dashboard/chat', icon: MessageSquare },
+    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
 
   return (
