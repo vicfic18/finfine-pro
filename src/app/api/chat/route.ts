@@ -100,15 +100,16 @@ export async function POST(request: Request): Promise<Response> {
     timeoutController.abort();
   }, timeoutMs);
   const signal = AbortSignal.any([request.signal, timeoutController.signal]);
+  const wantsStream = request.headers.get('accept')?.includes('application/x-ndjson') ?? false;
 
   let runtimeResponse: Response;
   try {
-    runtimeResponse = await fetch(endpoint, {
+    runtimeResponse = await fetch(wantsStream ? runtimeEndpoint('stream') : endpoint, {
       method: 'POST',
       headers: {
         Authorization: authorization,
         'Content-Type': 'application/json',
-        Accept: 'application/json',
+        Accept: wantsStream ? 'application/x-ndjson' : 'application/json',
       },
       body: JSON.stringify({
         prompt,
@@ -119,6 +120,7 @@ export async function POST(request: Request): Promise<Response> {
       cache: 'no-store',
     });
   } catch (error) {
+    clearTimeout(timeoutHandle);
     if (timedOut) {
       return errorResponse(requestId, 504, 'runtime_timeout', 'The agent took too long to respond.');
     }
@@ -129,9 +131,45 @@ export async function POST(request: Request): Promise<Response> {
     }
     console.error('FinFine agent runtime request failed:', error);
     return errorResponse(requestId, 502, 'runtime_unreachable', 'The agent could not be reached.');
-  } finally {
-    clearTimeout(timeoutHandle);
   }
+
+  if (wantsStream && runtimeResponse.ok) {
+    if (!runtimeResponse.body || !runtimeResponse.headers.get('content-type')?.includes('application/x-ndjson')) {
+      clearTimeout(timeoutHandle);
+      return errorResponse(requestId, 502, 'invalid_runtime_response', 'The agent returned an invalid response.');
+    }
+    const upstreamReader = runtimeResponse.body.getReader();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const chunk = await upstreamReader.read();
+          if (chunk.done) {
+            clearTimeout(timeoutHandle);
+            controller.close();
+          } else {
+            controller.enqueue(chunk.value);
+          }
+        } catch (error) {
+          clearTimeout(timeoutHandle);
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        clearTimeout(timeoutHandle);
+        await upstreamReader.cancel(reason);
+      },
+    });
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-store, no-transform',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  }
+
+  clearTimeout(timeoutHandle);
 
   const upstreamBody = await readJson(runtimeResponse);
   const safeError = safeRuntimeError(upstreamBody, requestId);

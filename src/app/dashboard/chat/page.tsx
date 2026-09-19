@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { ChatMessage, type ChatMessageData } from '@/components/prompt-kit/message';
 import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
 import { ThinkingBar } from '@/components/prompt-kit/thinking-bar';
-import { isUuid, type ConversationListResponse, type ConversationResponse, type ConversationSummary } from '@/lib/chat-contract';
+import { isChatStreamEvent, isUuid, type ChatStreamEvent, type ConversationListResponse, type ConversationResponse, type ConversationSummary } from '@/lib/chat-contract';
 
 const MAX_MESSAGES = 100;
 const MAX_PROMPT_LENGTH = 4_000;
@@ -54,6 +54,34 @@ function formatUpdatedAt(value: string): string {
     return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
   }
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date);
+}
+
+async function* readNdjson(response: Response): AsyncGenerator<ChatStreamEvent> {
+  if (!response.body) throw new Error('FinFine returned an empty response.');
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += value ?? '';
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event: unknown = JSON.parse(line);
+        if (!isChatStreamEvent(event)) throw new Error('FinFine returned an invalid streaming event.');
+        yield event;
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) {
+      const event: unknown = JSON.parse(buffer);
+      if (!isChatStreamEvent(event)) throw new Error('FinFine returned an invalid streaming event.');
+      yield event;
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function HistoryList({ conversations, selectedId, deletingId, loading, onOpen, onDelete, onNew, onClose }: {
@@ -195,21 +223,49 @@ function ChatboxContent() {
     activeRequestIdRef.current = requestId;
     setIsPending(true);
     try {
-      const response = await authenticatedFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, requestId, ...(requestSessionId ? { sessionId: requestSessionId } : {}) }), signal: controller.signal });
-      const payload = await response.json().catch(() => ({})) as ChatResponse;
-      if (activeRequestIdRef.current !== requestId) return;
-      if (!response.ok || payload.status === 'error') {
+      const response = await authenticatedFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify({ prompt, requestId, ...(requestSessionId ? { sessionId: requestSessionId } : {}) }), signal: controller.signal });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as ChatResponse;
         if (payload.code === 'SESSION_UNAVAILABLE') {
           setSessionId(null);
           setSessionUnavailable(true);
         }
         throw new Error(errorMessageFor(payload, 'FinFine could not complete that request.'));
       }
-      if (!payload.answer || !payload.sessionId) throw new Error('FinFine returned an invalid response.');
-      updateMessage(assistantId, { content: payload.answer, status: 'complete' });
-      setSessionId(payload.sessionId);
+      let completedSessionId: string | null = null;
+      let completedAnswer: string | null = null;
+      let streamedAnswer = '';
+      for await (const event of readNdjson(response)) {
+        if (activeRequestIdRef.current !== requestId) return;
+        if (event.type === 'step') {
+          setMessages((current) => current.map((message) => {
+            if (message.id !== assistantId) return message;
+            const steps = [...(message.steps ?? [])];
+            const index = steps.findIndex((step) => step.id === event.step.id);
+            if (index >= 0) steps[index] = event.step;
+            else steps.push(event.step);
+            return { ...message, steps };
+          }));
+        } else if (event.type === 'text_delta') {
+          streamedAnswer += event.delta;
+          updateMessage(assistantId, { content: streamedAnswer, status: 'complete' });
+        } else if (event.type === 'done') {
+          completedSessionId = event.sessionId;
+          completedAnswer = event.answer;
+        } else if (event.type === 'error') {
+          if (event.code === 'SESSION_UNAVAILABLE') {
+            setSessionId(null);
+            setSessionUnavailable(true);
+          }
+          throw new Error(errorMessageFor(event, 'FinFine could not complete that request.'));
+        }
+      }
+      if (activeRequestIdRef.current !== requestId) return;
+      if (!completedAnswer || !completedSessionId) throw new Error('FinFine returned an incomplete response.');
+      updateMessage(assistantId, { content: completedAnswer, status: 'complete' });
+      setSessionId(completedSessionId);
       setSessionUnavailable(false);
-      if (!requestSessionId) router.replace(`/dashboard/chat?conversation=${encodeURIComponent(payload.sessionId)}`, { scroll: false });
+      if (!requestSessionId) router.replace(`/dashboard/chat?conversation=${encodeURIComponent(completedSessionId)}`, { scroll: false });
       await refreshHistory().catch(() => undefined);
     } catch (error) {
       if (activeRequestIdRef.current !== requestId) return;
