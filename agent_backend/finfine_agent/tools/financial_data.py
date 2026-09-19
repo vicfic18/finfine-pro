@@ -83,6 +83,18 @@ class FinancialDataService:
         self._store = store
 
     def latest_balance(self) -> dict[str, Any]:
+        if hasattr(self._store, "get_latest_cash_position"):
+            cash_pos = self._store.get_latest_cash_position()
+            if cash_pos:
+                return {
+                    "found": True,
+                    "balance": _plain_number(cash_pos.get("totalLiquidCash", cash_pos.get("bankBalance", 0))),
+                    "balanceDate": cash_pos.get("asOf"),
+                    "bankBalance": _plain_number(cash_pos.get("bankBalance", 0)),
+                    "cashOnHand": _plain_number(cash_pos.get("cashOnHand", 0)),
+                    "source": "CASH_POSITION_SNAPSHOT",
+                }
+
         candidates: list[dict[str, Any]] = []
         for document in self._store.list_documents():
             metadata = _metadata(document)

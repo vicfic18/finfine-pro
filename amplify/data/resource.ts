@@ -19,6 +19,7 @@ const schema = a.schema({
       rawMetadata: a.json(),
       errorMessage: a.string(),
       processedAt: a.datetime(),
+      sourceRecordIds: a.string().array(),
     })
     .authorization((allow) => [allow.guest(), allow.authenticated()]),
 
@@ -39,6 +40,13 @@ const schema = a.schema({
       referenceNumber: a.string(), // UTR / UPI Ref ID
       description: a.string(),
       status: a.string(), // 'CONFIRMED' | 'PENDING' | 'RECONCILED'
+      // Analytics reconciliation references
+      productId: a.string(),
+      supplierId: a.string(),
+      saleId: a.string(),
+      purchaseId: a.string(),
+      obligationId: a.string(),
+      sourceRecordIds: a.string().array(),
     })
     .authorization((allow) => [allow.guest(), allow.authenticated()]),
 
@@ -57,6 +65,190 @@ const schema = a.schema({
       penaltyRatePerDay: a.float(),
       isStatutory: a.boolean(),
       status: a.string(), // 'SCHEDULED' | 'PAID' | 'OVERDUE' | 'DISPUTED'
+      // Analytics extensions & receivable attributes
+      supplierId: a.string(),
+      productId: a.string(),
+      allowPartialPayment: a.boolean(),
+      expectedSettlementDate: a.string(), // YYYY-MM-DD
+      probability: a.float(), // 0.0 - 1.0
+      confidence: a.string(), // 'HIGH' | 'MEDIUM' | 'LOW'
+      priorityOverride: a.float(),
+      priorityOverrideReason: a.string(),
+      sourceRecordIds: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  MerchantFinancialSettings: a
+    .model({
+      tenantId: a.string().required(),
+      minimumCashBuffer: a.float().required(),
+      bufferRuleType: a.string(), // 'ABSOLUTE_INR' | 'DAYS_OF_EXPENSE'
+      defaultForecastHorizonDays: a.integer(),
+      defaultForecastHorizonWeeks: a.integer(),
+      enableConservativeFallbacks: a.boolean(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  CashPositionSnapshot: a
+    .model({
+      tenantId: a.string().required(),
+      asOf: a.string().required(), // ISO Date: YYYY-MM-DD
+      bankBalance: a.float().required(),
+      cashOnHand: a.float(),
+      totalLiquidCash: a.float().required(),
+      sourceDocumentIds: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  Product: a
+    .model({
+      tenantId: a.string().required(),
+      name: a.string().required(),
+      sku: a.string(),
+      category: a.string(),
+      unitOfMeasure: a.string().required(),
+      isActive: a.boolean().required(),
+      aliases: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  Sale: a
+    .model({
+      tenantId: a.string().required(),
+      saleDate: a.string().required(), // YYYY-MM-DD
+      channel: a.string(),
+      customerName: a.string(),
+      grossAmount: a.float().required(),
+      discountAmount: a.float(),
+      netSalesAmount: a.float().required(),
+      documentId: a.string(),
+      sourceRecordIds: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  SaleLineItem: a
+    .model({
+      tenantId: a.string().required(),
+      saleId: a.string().required(),
+      productId: a.string().required(),
+      quantity: a.float().required(),
+      unitSellingPrice: a.float().required(),
+      grossAmount: a.float().required(),
+      discountAmount: a.float(),
+      returnQuantity: a.float(),
+      netSalesAmount: a.float().required(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  InventorySnapshot: a
+    .model({
+      tenantId: a.string().required(),
+      snapshotDate: a.string().required(), // YYYY-MM-DD
+      sourceType: a.string(), // 'MANUAL' | 'DOCUMENT' | 'POS' | 'SYSTEM'
+      documentId: a.string(),
+      sourceRecordIds: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  InventoryItem: a
+    .model({
+      tenantId: a.string().required(),
+      inventorySnapshotId: a.string().required(),
+      productId: a.string().required(),
+      quantityOnHand: a.float().required(),
+      unitPurchaseCost: a.float(),
+      inventoryValue: a.float(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  Purchase: a
+    .model({
+      tenantId: a.string().required(),
+      purchaseDate: a.string().required(), // YYYY-MM-DD
+      supplierId: a.string(),
+      supplierName: a.string(),
+      totalAmount: a.float().required(),
+      documentId: a.string(),
+      obligationId: a.string(),
+      sourceRecordIds: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  PurchaseLineItem: a
+    .model({
+      tenantId: a.string().required(),
+      purchaseId: a.string().required(),
+      productId: a.string().required(),
+      quantity: a.float().required(),
+      unitPurchaseCost: a.float().required(),
+      totalPurchaseAmount: a.float().required(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  SupplierProfile: a
+    .model({
+      tenantId: a.string().required(),
+      supplierName: a.string().required(),
+      leadTimeDays: a.integer(),
+      creditPeriodDays: a.integer(),
+      minimumOrderQuantity: a.float(),
+      deliveryCost: a.float(),
+      paymentTermsText: a.string(),
+      reliabilityScore: a.float(),
+      notes: a.string(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  SupplierProductTerms: a
+    .model({
+      tenantId: a.string().required(),
+      supplierId: a.string().required(),
+      productId: a.string().required(),
+      quotedUnitPrice: a.float(),
+      minimumOrderQuantity: a.float(),
+      leadTimeDays: a.integer(),
+      discountPercent: a.float(),
+      discountThresholdQuantity: a.float(),
+      deliveryCost: a.float(),
+      effectiveFrom: a.string(),
+      effectiveTo: a.string(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  PurchaseOrder: a
+    .model({
+      tenantId: a.string().required(),
+      supplierId: a.string(),
+      orderDate: a.string().required(), // YYYY-MM-DD
+      expectedDeliveryDate: a.string(),
+      status: a.string().required(), // 'OPEN' | 'PARTIALLY_RECEIVED' | 'RECEIVED' | 'CANCELLED'
+      documentId: a.string(),
+      sourceRecordIds: a.string().array(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  PurchaseOrderLineItem: a
+    .model({
+      tenantId: a.string().required(),
+      purchaseOrderId: a.string().required(),
+      productId: a.string().required(),
+      orderedQuantity: a.float().required(),
+      receivedQuantity: a.float(),
+      unitPurchaseCost: a.float(),
+    })
+    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+
+  RecurringExpense: a
+    .model({
+      tenantId: a.string().required(),
+      expenseType: a.string().required(),
+      amount: a.float().required(),
+      frequency: a.string().required(), // 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY'
+      dueDayOfMonth: a.integer(),
+      startDate: a.string(),
+      endDate: a.string(),
+      isActive: a.boolean().required(),
+      notes: a.string(),
     })
     .authorization((allow) => [allow.guest(), allow.authenticated()]),
 });

@@ -23,6 +23,20 @@ class Settings:
     document_table_name: str
     transaction_table_name: str
     obligation_table_name: str
+    merchant_settings_table_name: str | None = None
+    cash_position_table_name: str | None = None
+    product_table_name: str | None = None
+    sale_table_name: str | None = None
+    sale_line_item_table_name: str | None = None
+    inventory_snapshot_table_name: str | None = None
+    inventory_item_table_name: str | None = None
+    purchase_table_name: str | None = None
+    purchase_line_item_table_name: str | None = None
+    supplier_profile_table_name: str | None = None
+    supplier_product_terms_table_name: str | None = None
+    purchase_order_table_name: str | None = None
+    purchase_order_line_item_table_name: str | None = None
+    recurring_expense_table_name: str | None = None
     aws_profile: str | None = None
 
     @classmethod
@@ -46,6 +60,20 @@ class Settings:
             document_table_name=required["DOCUMENT_RECORD_TABLE_NAME"] or "",
             transaction_table_name=required["TRANSACTION_TABLE_NAME"] or "",
             obligation_table_name=required["OBLIGATION_TABLE_NAME"] or "",
+            merchant_settings_table_name=os.getenv("MERCHANT_SETTINGS_TABLE_NAME"),
+            cash_position_table_name=os.getenv("CASH_POSITION_TABLE_NAME"),
+            product_table_name=os.getenv("PRODUCT_TABLE_NAME"),
+            sale_table_name=os.getenv("SALE_TABLE_NAME"),
+            sale_line_item_table_name=os.getenv("SALE_LINE_ITEM_TABLE_NAME"),
+            inventory_snapshot_table_name=os.getenv("INVENTORY_SNAPSHOT_TABLE_NAME"),
+            inventory_item_table_name=os.getenv("INVENTORY_ITEM_TABLE_NAME"),
+            purchase_table_name=os.getenv("PURCHASE_TABLE_NAME"),
+            purchase_line_item_table_name=os.getenv("PURCHASE_LINE_ITEM_TABLE_NAME"),
+            supplier_profile_table_name=os.getenv("SUPPLIER_PROFILE_TABLE_NAME"),
+            supplier_product_terms_table_name=os.getenv("SUPPLIER_PRODUCT_TERMS_TABLE_NAME"),
+            purchase_order_table_name=os.getenv("PURCHASE_ORDER_TABLE_NAME"),
+            purchase_order_line_item_table_name=os.getenv("PURCHASE_ORDER_LINE_ITEM_TABLE_NAME"),
+            recurring_expense_table_name=os.getenv("RECURRING_EXPENSE_TABLE_NAME"),
             aws_profile=os.getenv("AWS_PROFILE") or None,
         )
 
