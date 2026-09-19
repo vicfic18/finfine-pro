@@ -311,7 +311,7 @@ function ChatboxContent() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="truncate font-display text-xl font-bold tracking-tight text-neutral-900 sm:text-2xl">{t('chat.assistantTitle')}</h1>
-                <span className="hidden rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 md:inline">{t('chat.online')}</span>
+                {/* <span className="hidden rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 md:inline">{t('chat.online')}</span> */}
               </div>
               <p className="mt-0.5 hidden text-xs text-neutral-500 md:block">{t('chat.assistantSubtitle')}</p>
             </div>

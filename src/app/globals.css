@@ -191,56 +191,53 @@ body {
   animation: floatGentle 12s ease-in-out infinite;
 }
 
-/* ── Ornamental Circle – top instance (enters from centre-top, orbits clockwise) ── */
+/*
+  ── Ornamental circles ──
+  Each circle is absolutely anchored to its edge (top/bottom) at left: 50%.
+  Start: fully off-screen (translateY(-100%) for top, translateY(100%) for bottom).
+  End of entry: translateY(-50%) → circle centre sits at the edge → only half visible.
+  After entry the spin animation takes over, keeping the same translate so the
+  half-visible position is preserved.
+*/
+
 @keyframes orb-top-enter {
-  0% {
-    transform: translate(-50%, 60%) rotate(0deg);
-    opacity: 0;
-  }
-  15% {
-    opacity: 0.18;
-  }
-  100% {
-    transform: translate(-50%, -38%) rotate(360deg);
-    opacity: 0.15;
-  }
+  0%   { transform: translate(-50%, -100%) rotate(0deg);  opacity: 0; }
+  12%  { opacity: 0.2; }
+  100% { transform: translate(-50%, -50%)  rotate(360deg); opacity: 0.16; }
 }
 
 @keyframes orb-spin-cw {
-  from { transform: translate(-50%, -38%) rotate(0deg); }
-  to   { transform: translate(-50%, -38%) rotate(360deg); }
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
-/* ── Ornamental Circle – bottom instance (enters from centre-bottom, orbits counter-clockwise) ── */
 @keyframes orb-bottom-enter {
-  0% {
-    transform: translate(-50%, -60%) rotate(0deg);
-    opacity: 0;
-  }
-  15% {
-    opacity: 0.18;
-  }
-  100% {
-    transform: translate(-50%, 38%) rotate(-360deg);
-    opacity: 0.15;
-  }
+  0%   { transform: translate(-50%, 100%)  rotate(0deg);   opacity: 0; }
+  12%  { opacity: 0.2; }
+  100% { transform: translate(-50%, 50%)   rotate(-360deg); opacity: 0.16; }
 }
 
 @keyframes orb-spin-ccw {
-  from { transform: translate(-50%, 38%) rotate(0deg); }
-  to   { transform: translate(-50%, 38%) rotate(-360deg); }
+  from { transform: translate(-50%, 50%) rotate(0deg); }
+  to   { transform: translate(-50%, 50%) rotate(-360deg); }
 }
 
 .orb-top {
+  position: absolute;
+  top: 0;
+  left: 50%;
   animation:
-    orb-top-enter 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
-    orb-spin-cw 28s linear 2.4s infinite;
+    orb-top-enter 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    orb-spin-cw   30s linear 2.6s infinite;
 }
 
 .orb-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
   animation:
-    orb-bottom-enter 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
-    orb-spin-ccw 28s linear 2.4s infinite;
+    orb-bottom-enter 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    orb-spin-ccw     30s linear 2.6s infinite;
 }
 
 /* ── FinFine Pro loading – sequential word reveal ── */

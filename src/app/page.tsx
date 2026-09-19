@@ -140,24 +140,22 @@ export default function Home() {
       <ArchitecturalCorner className="absolute bottom-0 left-0 w-44 sm:w-64 md:w-80 lg:w-[340px] pointer-events-none select-none z-0 opacity-80 -scale-y-100" />
       <ArchitecturalCorner className="absolute bottom-0 right-0 w-44 sm:w-64 md:w-80 lg:w-[340px] pointer-events-none select-none z-0 opacity-80 -scale-x-100 -scale-y-100" />
 
-      {/* Ornamental Circles – two instances, entering from centre, spinning CW / CCW */}
-      {/* Top circle – enters from centre-top, rotates clockwise */}
+      {/* Ornamental Circles – top half visible at screen top edge (CW), bottom half at screen bottom edge (CCW) */}
+      {/* Top circle */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/textures/mone-circle.png"
         alt=""
         aria-hidden="true"
-        className="orb-top absolute left-1/2 top-1/2 w-[520px] sm:w-[700px] pointer-events-none select-none opacity-0 mix-blend-multiply"
-        style={{ marginTop: '-260px', marginLeft: '-260px' }}
+        className="orb-top w-[520px] sm:w-[700px] pointer-events-none select-none mix-blend-multiply z-0"
       />
-      {/* Bottom circle – enters from centre-bottom, rotates counter-clockwise */}
+      {/* Bottom circle */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/textures/mone-circle.png"
         alt=""
         aria-hidden="true"
-        className="orb-bottom absolute left-1/2 top-1/2 w-[520px] sm:w-[700px] pointer-events-none select-none opacity-0 mix-blend-multiply"
-        style={{ marginTop: '-260px', marginLeft: '-260px' }}
+        className="orb-bottom w-[520px] sm:w-[700px] pointer-events-none select-none mix-blend-multiply z-0"
       />
 
       {/* Architectural Outer Frame Line */}

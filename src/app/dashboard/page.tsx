@@ -8,6 +8,7 @@ import RiskCalendar from '@/components/dashboard/RiskCalendar';
 import ScenarioSimulator from '@/components/dashboard/ScenarioSimulator';
 import TaxChecksWidget from '@/components/dashboard/TaxChecksWidget';
 import LanguageSelector from '@/components/ui/LanguageSelector';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 export default function DashboardPage() {
@@ -46,14 +47,7 @@ export default function DashboardPage() {
   };
 
   if (loading || !data) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-sans bg-white">
-        <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent animate-spin" />
-        <div className="text-xs uppercase tracking-widest font-semibold text-neutral-500">
-          {t('common.loading', 'Loading Financial Records...')}
-        </div>
-      </div>
-    );
+    return <FinFineProLoader />;
   }
 
   return (

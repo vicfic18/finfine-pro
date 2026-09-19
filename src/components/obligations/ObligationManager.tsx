@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import {
   Plus,
   Filter,
@@ -314,12 +315,7 @@ export default function ObligationManager() {
 
       {/* Obligation List */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-16 space-y-3">
-          <div className="w-6 h-6 border-2 border-neutral-900 border-t-transparent animate-spin" />
-          <span className="text-xs text-neutral-500 uppercase tracking-widest font-semibold">
-            {t('obligationManager.loading', 'Loading obligations...')}
-          </span>
-        </div>
+        <FinFineProLoader />
       ) : obligations.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 space-y-4 border border-dashed border-neutral-200">
           <Inbox size={32} className="text-neutral-300" />

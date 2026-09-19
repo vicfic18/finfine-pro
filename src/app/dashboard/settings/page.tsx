@@ -13,6 +13,7 @@ import {
   Languages,
 } from 'lucide-react';
 import LanguageSelector from '@/components/ui/LanguageSelector';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 
 interface MerchantSettings {
   tenantId: string;
@@ -116,14 +117,7 @@ export default function SettingsPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4 font-sans bg-white">
-        <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent animate-spin" />
-        <div className="text-xs uppercase tracking-widest font-semibold text-neutral-500">
-          {t('settings.loading')}
-        </div>
-      </div>
-    );
+    return <FinFineProLoader />;
   }
 
   return (

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import ObligationsWidget from '@/components/dashboard/ObligationsWidget';
 import ObligationManager from '@/components/obligations/ObligationManager';
 import LanguageSelector from '@/components/ui/LanguageSelector';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 export default function ObligationsPage() {
@@ -80,12 +81,7 @@ export default function ObligationsPage() {
         {activeTab === 'manage' ? (
           <ObligationManager />
         ) : loading || !data ? (
-          <div className="flex flex-col items-center justify-center py-16 space-y-4">
-            <div className="w-8 h-8 border-2 border-neutral-900 border-t-transparent animate-spin" />
-            <div className="text-xs uppercase tracking-widest font-semibold text-neutral-500">
-              {t('obligations.loading', 'Loading Recurrent Obligations...')}
-            </div>
-          </div>
+          <FinFineProLoader />
         ) : (
           <ObligationsWidget data={data} />
         )}
