@@ -249,6 +249,8 @@ const schema = a.schema({
       endDate: a.string(),
       isActive: a.boolean().required(),
       notes: a.string(),
+      linkedObligationCategory: a.string(), // Links to ObligationCategory for recurrence generation
+      counterpartyName: a.string(), // For display in obligation manager
     })
     .authorization((allow) => [allow.guest(), allow.authenticated()]),
 });

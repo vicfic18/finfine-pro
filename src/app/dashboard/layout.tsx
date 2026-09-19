@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud, Settings } from 'lucide-react';
 import clsx from 'clsx';
 import LanguageSelector from '@/components/ui/LanguageSelector';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 
 export default function DashboardLayout({
   children,
@@ -53,14 +54,7 @@ export default function DashboardLayout({
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#FFFFFF] flex items-center justify-center">
-        <div className="flex items-center space-x-3 text-neutral-500 font-sans text-sm">
-          <div className="w-2 h-2 rounded-full bg-neutral-900 animate-ping" />
-          <span>{t('common.loading', 'Loading workspace...')}</span>
-        </div>
-      </div>
-    );
+    return <FinFineProLoader />;
   }
 
   const navItems = [

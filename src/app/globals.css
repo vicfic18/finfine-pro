@@ -190,3 +190,71 @@ body {
 .animate-gateway-float {
   animation: floatGentle 12s ease-in-out infinite;
 }
+
+/* ── Ornamental Circle – top instance (enters from centre-top, orbits clockwise) ── */
+@keyframes orb-top-enter {
+  0% {
+    transform: translate(-50%, 60%) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.18;
+  }
+  100% {
+    transform: translate(-50%, -38%) rotate(360deg);
+    opacity: 0.15;
+  }
+}
+
+@keyframes orb-spin-cw {
+  from { transform: translate(-50%, -38%) rotate(0deg); }
+  to   { transform: translate(-50%, -38%) rotate(360deg); }
+}
+
+/* ── Ornamental Circle – bottom instance (enters from centre-bottom, orbits counter-clockwise) ── */
+@keyframes orb-bottom-enter {
+  0% {
+    transform: translate(-50%, -60%) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.18;
+  }
+  100% {
+    transform: translate(-50%, 38%) rotate(-360deg);
+    opacity: 0.15;
+  }
+}
+
+@keyframes orb-spin-ccw {
+  from { transform: translate(-50%, 38%) rotate(0deg); }
+  to   { transform: translate(-50%, 38%) rotate(-360deg); }
+}
+
+.orb-top {
+  animation:
+    orb-top-enter 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    orb-spin-cw 28s linear 2.4s infinite;
+}
+
+.orb-bottom {
+  animation:
+    orb-bottom-enter 2.4s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    orb-spin-ccw 28s linear 2.4s infinite;
+}
+
+/* ── FinFine Pro loading – sequential word reveal ── */
+@keyframes word-reveal {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes word-hide {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes loader-slide-away {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-28px); }
+}

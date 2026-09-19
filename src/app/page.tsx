@@ -140,6 +140,26 @@ export default function Home() {
       <ArchitecturalCorner className="absolute bottom-0 left-0 w-44 sm:w-64 md:w-80 lg:w-[340px] pointer-events-none select-none z-0 opacity-80 -scale-y-100" />
       <ArchitecturalCorner className="absolute bottom-0 right-0 w-44 sm:w-64 md:w-80 lg:w-[340px] pointer-events-none select-none z-0 opacity-80 -scale-x-100 -scale-y-100" />
 
+      {/* Ornamental Circles – two instances, entering from centre, spinning CW / CCW */}
+      {/* Top circle – enters from centre-top, rotates clockwise */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/textures/mone-circle.png"
+        alt=""
+        aria-hidden="true"
+        className="orb-top absolute left-1/2 top-1/2 w-[520px] sm:w-[700px] pointer-events-none select-none opacity-0 mix-blend-multiply"
+        style={{ marginTop: '-260px', marginLeft: '-260px' }}
+      />
+      {/* Bottom circle – enters from centre-bottom, rotates counter-clockwise */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/textures/mone-circle.png"
+        alt=""
+        aria-hidden="true"
+        className="orb-bottom absolute left-1/2 top-1/2 w-[520px] sm:w-[700px] pointer-events-none select-none opacity-0 mix-blend-multiply"
+        style={{ marginTop: '-260px', marginLeft: '-260px' }}
+      />
+
       {/* Architectural Outer Frame Line */}
       <div className="absolute inset-4 sm:inset-6 border border-neutral-900/15 pointer-events-none z-0">
         <div className="absolute inset-1 border border-neutral-900/10" />
