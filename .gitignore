@@ -49,6 +49,9 @@ yarn-error.log*
 next-env.d.ts
 
 # amplify
+deploy.zip
 .amplify
+.amplify-hosting
+.deploy_pkg
 amplify_outputs*
 amplifyconfiguration*
