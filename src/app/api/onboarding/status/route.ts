@@ -3,8 +3,20 @@ import { AuthenticationConfigurationError, AuthenticationError, requirePrincipal
 import { getOnboardingStatus } from '@/lib/onboarding-store';
 
 function authError(error: unknown) {
-  if (error instanceof AuthenticationConfigurationError) return NextResponse.json({ error: error.message }, { status: 503 });
-  if (error instanceof AuthenticationError) return NextResponse.json({ error: error.message }, { status: 401 });
+  if (
+    error instanceof AuthenticationConfigurationError ||
+    (error as { name?: string })?.name === 'AuthenticationConfigurationError' ||
+    (error as { status?: number })?.status === 503
+  ) {
+    return NextResponse.json({ error: (error as Error).message || 'Authentication is not configured.' }, { status: 503 });
+  }
+  if (
+    error instanceof AuthenticationError ||
+    (error as { name?: string })?.name === 'AuthenticationError' ||
+    (error as { status?: number })?.status === 401
+  ) {
+    return NextResponse.json({ error: (error as Error).message || 'Authentication is required.' }, { status: 401 });
+  }
   return null;
 }
 
@@ -27,6 +39,10 @@ export async function GET(request: Request) {
       documents,
     }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
-    return authError(error) || NextResponse.json({ error: 'Failed to load onboarding status.' }, { status: 500 });
+    console.error('Failed to load onboarding status:', error);
+    return authError(error) || NextResponse.json({
+      error: 'Failed to load onboarding status.',
+      detail: error instanceof Error ? error.message : String(error),
+    }, { status: 500 });
   }
 }
