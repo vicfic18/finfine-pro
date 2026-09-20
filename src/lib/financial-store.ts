@@ -6,6 +6,8 @@ import {
   PutCommand,
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { predictCashFlow } from './sagemaker-forecast-client';
+import { getUpcomingIndianMilestones } from './indian-financial-calendar';
 
 const region = process.env.AWS_REGION || 'ap-south-1';
 const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
@@ -86,11 +88,36 @@ export interface FinancialMetricData {
     baseBalance: number;
     optimisticBalance: number;
     conservativeBalance: number;
+    p10Balance?: number;
+    p50Balance?: number;
+    p90Balance?: number;
     netDelta: number;
     inflow: number;
     outflow: number;
     events: string[];
+    festivals?: string[];
+    statutoryDrain?: string;
+    inflowMultiplier?: number;
   }>;
+  mlForecast?: {
+    modelName: string;
+    engine: string;
+    festiveUpliftInr: number;
+    statutoryTaxDrainInr: number;
+    confidenceInterval: {
+      p10MinBalance: number;
+      p50MinBalance: number;
+      p90MaxBalance: number;
+    };
+    upcomingMilestones: Array<{
+      date: string;
+      dayOffset: number;
+      type: 'FESTIVAL' | 'MEGA_SALE' | 'STATUTORY_TAX';
+      title: string;
+      expectedImpact: string;
+      recommendedAction: string;
+    }>;
+  };
   pinchPoints: Array<{
     date: string;
     dayNum: number;
@@ -567,6 +594,32 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
 
   const trajectory60Days: FinancialMetricData['trajectory60Days'] = [];
 
+  // ML Probabilistic Forecast via AWS SageMaker / Chronos-Bolt Quantile Ensemble
+  const historyPoints = transactions.map((t) => ({
+    date: t.date || asOfDate,
+    inflow: t.type === 'INFLOW' ? Number(t.amount || 0) : 0,
+    outflow: t.type === 'OUTFLOW' ? Number(t.amount || 0) : 0,
+    net: (t.type === 'INFLOW' ? 1 : -1) * Number(t.amount || 0),
+    balance: t.balanceAfterTransaction ? Number(t.balanceAfterTransaction) : undefined,
+  }));
+
+  const mlForecastResult = await predictCashFlow({
+    history: historyPoints,
+    startingBalance: totalBalance,
+    horizonDays: 60,
+    asOfDate,
+    minimumCashBuffer,
+    recurrentObligations: obligations.map((o) => ({
+      title: o.title || '',
+      dueDate: o.dueDate,
+      amount: Number(o.amount || 0),
+      type: o.type,
+      category: o.category,
+      isStatutory: o.isStatutory,
+    })),
+    indianContextEnabled: true,
+  });
+
   for (let i = 1; i <= 60; i++) {
     const simDate = new Date(baseAsOf);
     simDate.setDate(baseAsOf.getDate() + i);
@@ -601,16 +654,24 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
       zeroBreached = true;
     }
 
+    const mlPoint = mlForecastResult.dailyForecasts[i - 1];
+
     trajectory60Days.push({
       day: i,
       date: dateStr,
       baseBalance: Math.round(runningBalance),
       optimisticBalance: Math.round(runningBalance + (dayInflows > 0 ? dayInflows * 0.1 : 0)),
       conservativeBalance: Math.round(runningBalance - (dayOutflows > 0 ? dayOutflows * 0.1 : 0)),
+      p10Balance: mlPoint ? mlPoint.p10Balance : Math.round(runningBalance * 0.9),
+      p50Balance: mlPoint ? mlPoint.p50Balance : Math.round(runningBalance),
+      p90Balance: mlPoint ? mlPoint.p90Balance : Math.round(runningBalance * 1.1),
       netDelta: Math.round(delta),
       inflow: Math.round(totalIn),
       outflow: Math.round(totalOut),
       events: eventNames,
+      festivals: mlPoint?.activeFestivals || [],
+      statutoryDrain: mlPoint?.statutoryDrainTitle,
+      inflowMultiplier: mlPoint?.inflowMultiplier || 1.0,
     });
   }
 
@@ -820,5 +881,17 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
     paymentRailSavings,
     discountArbitrage,
     statutoryCompliance,
+    mlForecast: {
+      modelName: mlForecastResult.modelName,
+      engine: mlForecastResult.engine,
+      festiveUpliftInr: mlForecastResult.festiveUpliftTotalInr,
+      statutoryTaxDrainInr: mlForecastResult.statutoryTaxDrainTotalInr,
+      confidenceInterval: {
+        p10MinBalance: mlForecastResult.solvencySummary.minimumP10Balance,
+        p50MinBalance: mlForecastResult.solvencySummary.minimumP50Balance,
+        p90MaxBalance: Math.max(...mlForecastResult.dailyForecasts.map((f) => f.p90Balance)),
+      },
+      upcomingMilestones: getUpcomingIndianMilestones(asOfDate, 60),
+    },
   };
 }

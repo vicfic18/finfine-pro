@@ -9,6 +9,7 @@ from finfine_agent.tools.financial_data import (
     get_transactions,
     get_upcoming_obligations,
 )
+from finfine_agent.tools.sagemaker_forecast import predict_cash_flow_sagemaker
 
 __all__ = [
     "FinancialDataService",
@@ -18,4 +19,5 @@ __all__ = [
     "get_latest_balance",
     "get_transactions",
     "get_upcoming_obligations",
+    "predict_cash_flow_sagemaker",
 ]

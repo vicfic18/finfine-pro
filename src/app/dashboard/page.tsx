@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import TopRibbon from '@/components/dashboard/TopRibbon';
 import ForecastingCharts from '@/components/dashboard/ForecastingCharts';
+import FestiveLiquidityRadar from '@/components/dashboard/FestiveLiquidityRadar';
 import RiskCalendar from '@/components/dashboard/RiskCalendar';
 import ScenarioSimulator from '@/components/dashboard/ScenarioSimulator';
 import TaxChecksWidget from '@/components/dashboard/TaxChecksWidget';
@@ -88,7 +89,12 @@ export default function DashboardPage() {
         />
       </section>
 
-      {/* 4. Risk Calendar with Month Heatmap & Paginated Schedule Table */}
+      {/* 4. Indian Festive Liquidity Radar & Tax Shield */}
+      <section aria-label="Festive Liquidity Radar">
+        <FestiveLiquidityRadar data={data} />
+      </section>
+
+      {/* 5. Risk Calendar with Month Heatmap & Paginated Schedule Table */}
       <section aria-label="Risk Calendar">
         <RiskCalendar data={data} />
       </section>

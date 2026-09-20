@@ -730,6 +730,17 @@ export async function generateBescomPdf(options?: BaseDocOptions): Promise<Buffe
  */
 export const SAMPLE_DOCUMENTS_REGISTRY = [
   {
+    id: 'BANK_STATEMENT_6MONTH',
+    fileName: 'sample_6month_hdfc_statement.pdf',
+    displayName: '6-Month Comprehensive HDFC Statement (389 Txns • Festive Cycles)',
+    docType: 'BANK_STATEMENT' as const,
+    description: 'Continuous 6-month bank ledger (May-Oct 2026) capturing UPI footfall surges, Diwali peaks, and statutory tax drains',
+    generator: async ({ outputPath }: { businessName?: string; outputPath?: string }) => {
+      const { generateSixMonthStatementPdf } = await import('./generate-6month-statement');
+      return generateSixMonthStatementPdf(outputPath);
+    },
+  },
+  {
     id: 'BANK_STATEMENT',
     fileName: 'sample_upi_bank_statement.pdf',
     displayName: 'HDFC Bank Current Statement (INR 1.42L)',
