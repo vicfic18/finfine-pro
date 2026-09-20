@@ -13,6 +13,43 @@ type Outputs = {
   data?: { aws_region?: string };
   custom?: Record<string, string>;
 };
+
+type IngestionDocumentBase = {
+  id: string;
+  fileName: string;
+  documentType: string;
+  status: string;
+  reconciliationStatus: string;
+  processedAt: string;
+  rawMetadata?: Record<string, unknown>;
+};
+
+export type BankStatementDoc = IngestionDocumentBase & {
+  documentType: 'BANK_STATEMENT';
+  bankName: string;
+  accountNumberMasked: string;
+  statementPeriod: { startDate: string; endDate: string };
+  openingBalance: number;
+  closingBalance: number;
+  totalInflow: number;
+  totalOutflow: number;
+  transactionCount: number;
+};
+
+export type BillInvoiceDoc = IngestionDocumentBase & {
+  documentType: 'INVOICE' | 'RECEIPT' | 'GST_CHALLAN' | 'OTHER';
+  invoiceNumber: string;
+  counterpartyName: string;
+  counterpartyType: 'VENDOR' | 'CUSTOMER' | 'TAX_AUTHORITY';
+  category: string;
+  gstin?: string;
+  invoiceDate: string;
+  dueDate?: string;
+  amount: number;
+  taxAmount?: number;
+  matchedBankRef?: string;
+};
+
 function loadOutputs(): Outputs {
   try {
     const file = path.join(process.cwd(), 'amplify_outputs.json');

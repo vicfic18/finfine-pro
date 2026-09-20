@@ -20,6 +20,9 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
 
   const isBankStatement = document.documentType === 'BANK_STATEMENT';
   const raw = document.rawMetadata || {};
+  const lineItems = Array.isArray(raw.lineItems)
+    ? raw.lineItems.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-sans">
@@ -206,7 +209,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             </div>
 
             {/* Line items if available */}
-            {raw.lineItems && Array.isArray(raw.lineItems) && (
+            {lineItems.length > 0 && (
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-neutral-600 block mb-2">
                   {t('ingestion.extractedLineItems')}:
@@ -222,12 +225,12 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200">
-                      {raw.lineItems.map((item: any, idx: number) => (
+                      {lineItems.map((item, idx) => (
                         <tr key={idx} className="hover:bg-neutral-50/50">
-                          <td className="p-2">{item.desc || item.description}</td>
-                          <td className="p-2 text-right font-mono">{item.qty}</td>
-                          <td className="p-2 text-right font-mono">₹{item.rate}</td>
-                          <td className="p-2 text-right font-mono font-bold">₹{item.total}</td>
+                          <td className="p-2">{String(item.desc || item.description || '')}</td>
+                          <td className="p-2 text-right font-mono">{String(item.qty ?? '')}</td>
+                          <td className="p-2 text-right font-mono">₹{String(item.rate ?? '')}</td>
+                          <td className="p-2 text-right font-mono font-bold">₹{String(item.total ?? '')}</td>
                         </tr>
                       ))}
                     </tbody>

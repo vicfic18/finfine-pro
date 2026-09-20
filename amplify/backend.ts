@@ -10,6 +10,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as ecrAssets from 'aws-cdk-lib/aws-ecr-assets';
 import { Duration } from 'aws-cdk-lib';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -258,6 +259,7 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
     path.join(__dirname, '..'),
     {
       file: 'agent_backend/Dockerfile',
+      platform: ecrAssets.Platform.LINUX_AMD64,
       exclude: [
         'node_modules',
         '.next',

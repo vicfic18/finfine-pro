@@ -4,16 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import Link from 'next/link';
 import {
-  Sparkles,
   Sliders,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Store,
   RefreshCw,
   Save,
-  HelpCircle,
-  Calendar,
   AlertCircle,
 } from 'lucide-react';
 import FestiveLiquidityRadar from '@/components/dashboard/FestiveLiquidityRadar';
@@ -24,6 +20,7 @@ import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import BrandLogo from '@/components/ui/BrandLogo';
 import { AUTHORITATIVE_MARKET_EVENTS_CATALOG } from '@/lib/tax-rules-engine';
 import { DEFAULT_ENABLED_FESTIVALS, type FinancialMetricData, type MerchantSettings } from '@/lib/financial-store';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 export const SECTOR_PRESETS: Record<string, { name: string; description: string; festivals: string[]; weekendSurge: boolean }> = {
   'Retail & Distribution': {
@@ -73,8 +70,8 @@ export const SECTOR_PRESETS: Record<string, { name: string; description: string;
 export default function PredictiveModelingPage() {
   const { t } = useTranslation();
   const [data, setData] = useState<FinancialMetricData | null>(null);
-  const [settings, setSettings] = useState<MerchantSettings | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [showFestivalCustomizer, setShowFestivalCustomizer] = useState<boolean>(false);
@@ -92,31 +89,42 @@ export default function PredictiveModelingPage() {
   const loadDataAndSettings = async () => {
     try {
       const [dataRes, settingsRes] = await Promise.all([
-        fetch('/api/dashboard/financial-data'),
-        fetch('/api/dashboard/settings'),
+        authenticatedFetch('/api/dashboard/financial-data'),
+        authenticatedFetch('/api/dashboard/settings'),
       ]);
 
-      if (dataRes.ok) {
-        const dataJson = await dataRes.json();
-        setData(dataJson);
+      if (!dataRes.ok) {
+        const errorPayload = await dataRes.json().catch(() => null) as { error?: string; details?: string } | null;
+        throw new Error(
+          errorPayload?.error
+            || errorPayload?.details
+            || `Unable to load financial forecast (HTTP ${dataRes.status}).`,
+        );
       }
+
+      const dataJson = await dataRes.json();
+      setData(dataJson);
       if (settingsRes.ok) {
         const settingsJson: MerchantSettings = await settingsRes.json();
-        setSettings(settingsJson);
         if (settingsJson.businessSector) setBusinessSector(settingsJson.businessSector);
         if (Array.isArray(settingsJson.enabledFestivals)) setEnabledFestivals(settingsJson.enabledFestivals);
         if (settingsJson.enableWeekendSurge !== undefined) setEnableWeekendSurge(settingsJson.enableWeekendSurge);
         if (settingsJson.festivalMultipliers) setCustomMultipliers(settingsJson.festivalMultipliers);
       }
+      setLoadError(null);
     } catch (err) {
       console.error('Failed to load predictive modeling data:', err);
+      setLoadError(err instanceof Error ? err.message : 'Unable to load predictive modeling data.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDataAndSettings();
+    const timer = window.setTimeout(() => {
+      void loadDataAndSettings();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleSectorChange = (sector: string) => {
@@ -138,7 +146,7 @@ export default function PredictiveModelingPage() {
     setSaving(true);
     setSavedSuccess(false);
     try {
-      const res = await fetch('/api/dashboard/settings', {
+      const res = await authenticatedFetch('/api/dashboard/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -152,7 +160,7 @@ export default function PredictiveModelingPage() {
       if (!res.ok) throw new Error('Failed to persist settings');
 
       // Refresh financial metrics to immediately re-calculate forecast with new settings
-      const freshDataRes = await fetch('/api/dashboard/financial-data?refresh=true');
+      const freshDataRes = await authenticatedFetch('/api/dashboard/financial-data?refresh=true');
       if (freshDataRes.ok) {
         const freshData = await freshDataRes.json();
         setData(freshData);
@@ -167,8 +175,34 @@ export default function PredictiveModelingPage() {
     }
   };
 
-  if (loading || !data) {
+  if (loading) {
     return <FinFineProLoader />;
+  }
+
+  if (loadError || !data) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center p-6">
+        <div className="w-full max-w-lg border border-red-200 bg-red-50 p-6 text-center">
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-600" />
+          <h1 className="font-display text-xl font-bold text-neutral-900">Unable to load predictions</h1>
+          <p className="mt-2 text-sm text-neutral-600">
+            {loadError || 'Financial forecast data is unavailable right now.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              setLoadError(null);
+              void loadDataAndSettings();
+            }}
+            className="mt-4 inline-flex items-center bg-neutral-900 px-4 py-2 text-xs font-bold text-white hover:bg-neutral-800"
+          >
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -382,4 +416,3 @@ export default function PredictiveModelingPage() {
     </div>
   );
 }
-

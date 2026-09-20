@@ -73,6 +73,9 @@ interface LedgerRecord {
   dueDate?: string;
   priorityWeight?: number;
   counterpartyName?: string;
+  createdAt?: string;
+  description?: string;
+  documentId?: string;
   expectedSettlementDate?: string;
   probability?: number;
   penaltyRatePerDay?: number;
@@ -702,14 +705,18 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
     horizonDays: 60,
     asOfDate,
     minimumCashBuffer,
-    recurrentObligations: obligations.map((o) => ({
-      title: o.title || '',
-      dueDate: o.dueDate,
-      amount: Number(o.amount || 0),
-      type: o.type,
-      category: o.category,
-      isStatutory: o.isStatutory,
-    })),
+    recurrentObligations: obligations.flatMap((o) => {
+      const type = o.type === 'PAYABLE' || o.type === 'RECEIVABLE' ? o.type : undefined;
+      if (!type) return [];
+      return [{
+        title: o.title || '',
+        dueDate: o.dueDate,
+        amount: Number(o.amount || 0),
+        type,
+        category: o.category,
+        isStatutory: o.isStatutory,
+      }];
+    }),
     indianContextEnabled: true,
     enabledFestivals: settings.enabledFestivals,
     customMultipliers: settings.festivalMultipliers,
