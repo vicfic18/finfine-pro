@@ -11,7 +11,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as ecrAssets from 'aws-cdk-lib/aws-ecr-assets';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Duration } from 'aws-cdk-lib';
 import * as path from 'path';
@@ -270,27 +270,13 @@ voiceTranscriberLambda.addToRolePolicy(new iam.PolicyStatement({
   resources: ['*'],
 }));
 
+const agentEcrRepo = ecr.Repository.fromRepositoryName(agentStack, 'FinFineAgentBackendRepo', 'finfine-agent-backend');
+
 const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBackendFunction', {
-  // Keep the Lambda architecture and Docker asset platform aligned when
-  // synthesizing from an Apple Silicon development machine.
   architecture: lambda.Architecture.X86_64,
-  code: lambda.DockerImageCode.fromImageAsset(
-    path.join(__dirname, '..'),
-    {
-      file: 'agent_backend/Dockerfile',
-      platform: ecrAssets.Platform.LINUX_AMD64,
-      exclude: [
-        'node_modules',
-        '.next',
-        '.amplify',
-        '.git',
-        'public',
-        'agent_backend/.venv',
-        'agent_backend/.pytest_cache',
-        '**/__pycache__',
-      ],
-    }
-  ),
+  code: lambda.DockerImageCode.fromEcr(agentEcrRepo, {
+    tagOrDigest: 'v1',
+  }),
   memorySize: 1024,
   timeout: Duration.seconds(180),
   environment: {
