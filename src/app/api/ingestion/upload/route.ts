@@ -205,6 +205,7 @@ async function ingestPdfBuffer(
   fileName: string,
   docType: 'BANK_STATEMENT' | 'INVOICE' | 'GST_CHALLAN',
   tenantId: string,
+  category: string = 'OTHER',
   manualMetadata: any = {}
 ) {
   const timestamp = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -223,6 +224,7 @@ async function ingestPdfBuffer(
         tenantId,
         documentId,
         documentType: docType,
+        category,
       },
     })
   );
@@ -244,10 +246,18 @@ async function ingestPdfBuffer(
     tenantId,
     documentId,
     documentType: docType,
+    category,
     manualMetadata,
   });
 
-  const pipelineResult = await runIngestionNormalizer(extractOutput);
+  const pipelineResult = await runIngestionNormalizer({
+    ...extractOutput,
+    category,
+    tenantId,
+    documentId,
+    bucket: bucketName,
+    key: s3Key,
+  });
   return { documentId, s3Key, fileName: sanitizedFileName, pipelineResult };
 }
 
@@ -501,12 +511,13 @@ export async function POST(request: Request) {
       }
 
       const docType = ((formData.get('documentType') as string) || 'BANK_STATEMENT') as 'BANK_STATEMENT' | 'INVOICE';
+      const rawCategory = (formData.get('category') as string) || (docType === 'BANK_STATEMENT' ? 'BANK_ACTIVITY' : 'OTHER');
       const customVendor = formData.get('counterpartyName') as string | null;
       const customAmount = formData.get('amount') as string | null;
       const subType = (formData.get('subType') as string) || (docType === 'INVOICE' ? 'PAYABLE' : undefined);
 
       let manualMetadata: any = {};
-      if (files.length === 1 && (customVendor || customAmount || subType)) {
+      if (files.length === 1 && (customVendor || customAmount || subType || rawCategory)) {
         manualMetadata = {
           counterpartyName: customVendor,
           amount: customAmount ? parseFloat(customAmount) : undefined,
@@ -515,13 +526,13 @@ export async function POST(request: Request) {
           gstin: formData.get('gstin'),
           type: subType,
           counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
-          category: subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL',
+          category: rawCategory !== 'OTHER' ? rawCategory : (subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL'),
         };
-      } else if (subType) {
+      } else if (subType || rawCategory) {
         manualMetadata = {
           type: subType,
           counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
-          category: subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL',
+          category: rawCategory !== 'OTHER' ? rawCategory : (subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL'),
         };
       }
 
@@ -539,7 +550,7 @@ export async function POST(request: Request) {
           const arrayBuffer = await file.arrayBuffer();
           const fileBuffer = Buffer.from(arrayBuffer);
           const fileName = file.name || `upload_${Date.now()}`;
-          const result = await ingestPdfBuffer(fileBuffer, fileName, docType, tenantId, manualMetadata);
+          const result = await ingestPdfBuffer(fileBuffer, fileName, docType, tenantId, rawCategory, manualMetadata);
           processedResults.push({
             documentId: result.documentId,
             fileName: result.fileName,

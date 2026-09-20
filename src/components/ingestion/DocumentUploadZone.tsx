@@ -21,15 +21,124 @@ import {
   Files,
   Plus,
   Trash2,
+  Boxes,
+  CalendarClock,
+  Repeat,
 } from 'lucide-react';
 import clsx from 'clsx';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
-export type UploadCategory = 'BANK_STATEMENT' | 'BILL_PAYABLE' | 'INVOICE_RECEIVABLE';
+export type UploadCategory =
+  | 'BANK_STATEMENT'
+  | 'CURRENT_INVENTORY'
+  | 'PRODUCT_SALES'
+  | 'BILL_PAYABLE'
+  | 'OPEN_OBLIGATIONS'
+  | 'RECURRING_EXPENSES';
 
 interface DocumentUploadZoneProps {
   onUploadSuccess?: () => void;
   defaultCategory?: UploadCategory;
 }
+
+interface CategoryConfig {
+  id: UploadCategory;
+  canonicalCategory: string;
+  docType: 'BANK_STATEMENT' | 'INVOICE' | 'GST_CHALLAN';
+  subType?: 'PAYABLE' | 'RECEIVABLE';
+  title: string;
+  subtitle: string;
+  badge: string;
+  badgeColor: string;
+  icon: React.ElementType;
+  iconBg: string;
+  examples: string;
+  accept: string;
+}
+
+const CATEGORY_CONFIGS: Record<UploadCategory, CategoryConfig> = {
+  BANK_STATEMENT: {
+    id: 'BANK_STATEMENT',
+    canonicalCategory: 'BANK_ACTIVITY',
+    docType: 'BANK_STATEMENT',
+    title: 'Bank Activity & Statements',
+    subtitle: 'Statements and account passbooks (90d)',
+    badge: 'Banking',
+    badgeColor: 'bg-neutral-100 text-neutral-800 border-neutral-300',
+    icon: Building2,
+    iconBg: 'bg-neutral-900 text-white',
+    examples: 'SBI, HDFC, ICICI, Axis, or Kotak monthly statement PDF or passbook export',
+    accept: '.pdf,.csv,.ofx',
+  },
+  CURRENT_INVENTORY: {
+    id: 'CURRENT_INVENTORY',
+    canonicalCategory: 'CURRENT_INVENTORY',
+    docType: 'INVOICE',
+    title: 'Current Inventory & Stock',
+    subtitle: 'Stock registers and SKU item reports',
+    badge: 'Stock',
+    badgeColor: 'bg-amber-50 text-amber-800 border-amber-200',
+    icon: Boxes,
+    iconBg: 'bg-amber-900 text-white',
+    examples: 'Warehouse stock count snapshot, ERP inventory register, or SKU valuation report',
+    accept: '.pdf,.csv,.xlsx,.xls,.png,.jpg',
+  },
+  PRODUCT_SALES: {
+    id: 'PRODUCT_SALES',
+    canonicalCategory: 'PRODUCT_SALES',
+    docType: 'INVOICE',
+    subType: 'RECEIVABLE',
+    title: 'Product Sales & Invoices',
+    subtitle: 'Customer billing and sales registers (In)',
+    badge: 'Inflow',
+    badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    icon: ArrowUpRight,
+    iconBg: 'bg-emerald-900 text-white',
+    examples: 'Sales tax invoice sent to Apex Retail, POS summary report, or B2B client GST bill',
+    accept: '.pdf,.png,.jpg,.jpeg,.csv',
+  },
+  BILL_PAYABLE: {
+    id: 'BILL_PAYABLE',
+    canonicalCategory: 'PURCHASES_SUPPLIERS',
+    docType: 'INVOICE',
+    subType: 'PAYABLE',
+    title: 'Purchases & Supplier Bills',
+    subtitle: 'Raw material procurement and vendor bills (Out)',
+    badge: 'Outflow',
+    badgeColor: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    icon: ArrowDownLeft,
+    iconBg: 'bg-indigo-900 text-white',
+    examples: 'Raw material purchase bill from Sharma Textiles, packing material invoice, or goods receipt note',
+    accept: '.pdf,.png,.jpg,.jpeg,.csv',
+  },
+  OPEN_OBLIGATIONS: {
+    id: 'OPEN_OBLIGATIONS',
+    canonicalCategory: 'OPEN_OBLIGATIONS',
+    docType: 'INVOICE',
+    title: 'Open Obligations & Schedules',
+    subtitle: 'Payables, receivables, and due schedules',
+    badge: 'Obligations',
+    badgeColor: 'bg-rose-50 text-rose-700 border-rose-200',
+    icon: CalendarClock,
+    iconBg: 'bg-rose-900 text-white',
+    examples: 'Loan EMI schedule, advance tax / GST challan assessment, or debtor aging statement',
+    accept: '.pdf,.png,.jpg,.jpeg,.csv',
+  },
+  RECURRING_EXPENSES: {
+    id: 'RECURRING_EXPENSES',
+    canonicalCategory: 'RECURRING_EXPENSES',
+    docType: 'INVOICE',
+    subType: 'PAYABLE',
+    title: 'Recurring Expenses & Overheads',
+    subtitle: 'Rent, payroll, utilities, and subscriptions',
+    badge: 'Fixed Cost',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
+    icon: Repeat,
+    iconBg: 'bg-purple-900 text-white',
+    examples: 'Commercial shop rent agreement, monthly staff payroll sheet, or electricity/broadband bill',
+    accept: '.pdf,.png,.jpg,.jpeg,.csv',
+  },
+};
 
 export default function DocumentUploadZone({
   onUploadSuccess,
@@ -44,7 +153,7 @@ export default function DocumentUploadZone({
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Optional manual inputs for Bills/Invoices (available when 1 file is selected)
+  // Optional manual inputs (available when 1 file is selected)
   const [partyName, setPartyName] = useState<string>('');
   const [docAmount, setDocAmount] = useState<string>('');
   const [docNumber, setDocNumber] = useState<string>('');
@@ -52,6 +161,7 @@ export default function DocumentUploadZone({
   const [showOptionalFields, setShowOptionalFields] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeConfig = CATEGORY_CONFIGS[category];
 
   const addFiles = (newFilesList: FileList | File[]) => {
     const incoming = Array.from(newFilesList);
@@ -97,7 +207,6 @@ export default function DocumentUploadZone({
     if (e.target.files && e.target.files.length > 0) {
       addFiles(e.target.files);
     }
-    // Reset so selecting the same file again triggers change
     if (e.target) e.target.value = '';
   };
 
@@ -110,6 +219,7 @@ export default function DocumentUploadZone({
     setDocAmount('');
     setDocNumber('');
     setDocDate('');
+    setShowOptionalFields(false);
   };
 
   const totalSizeKB = (
@@ -139,29 +249,20 @@ export default function DocumentUploadZone({
         formData.append('files', f);
       });
 
-      if (category === 'BANK_STATEMENT') {
-        formData.append('documentType', 'BANK_STATEMENT');
-      } else if (category === 'BILL_PAYABLE') {
-        formData.append('documentType', 'INVOICE');
-        formData.append('subType', 'PAYABLE');
-        if (files.length === 1) {
-          if (partyName) formData.append('counterpartyName', partyName);
-          if (docAmount) formData.append('amount', docAmount);
-          if (docNumber) formData.append('invoiceNumber', docNumber);
-          if (docDate) formData.append('dueDate', docDate);
-        }
-      } else {
-        formData.append('documentType', 'INVOICE');
-        formData.append('subType', 'RECEIVABLE');
-        if (files.length === 1) {
-          if (partyName) formData.append('counterpartyName', partyName);
-          if (docAmount) formData.append('amount', docAmount);
-          if (docNumber) formData.append('invoiceNumber', docNumber);
-          if (docDate) formData.append('dueDate', docDate);
-        }
+      formData.append('documentType', activeConfig.docType);
+      formData.append('category', activeConfig.canonicalCategory);
+      if (activeConfig.subType) {
+        formData.append('subType', activeConfig.subType);
       }
 
-      const response = await fetch('/api/ingestion/upload', {
+      if (files.length === 1) {
+        if (partyName) formData.append('counterpartyName', partyName);
+        if (docAmount) formData.append('amount', docAmount);
+        if (docNumber) formData.append('invoiceNumber', docNumber);
+        if (docDate) formData.append('dueDate', docDate);
+      }
+
+      const response = await authenticatedFetch('/api/ingestion/upload', {
         method: 'POST',
         body: formData,
       });
@@ -202,146 +303,70 @@ export default function DocumentUploadZone({
 
   return (
     <div className="bg-white border border-neutral-200 shadow-xs overflow-hidden">
-      
       <div className="flex flex-col md:flex-row">
         
-        {/* LEFT COLUMN: Vertical Connected Tabs */}
-        <div className="w-full md:w-72 lg:w-80 border-b md:border-b-0 md:border-r border-neutral-200 bg-neutral-50/80 p-4 sm:p-5 flex flex-col justify-between shrink-0 space-y-4">
-          
+        {/* LEFT COLUMN: Vertical Connected Tabs with 6 Business Upload Categories */}
+        <div className="w-full md:w-80 lg:w-96 border-b md:border-b-0 md:border-r border-neutral-200 bg-neutral-50/80 p-4 sm:p-5 flex flex-col justify-between shrink-0 space-y-4">
           <div className="space-y-3">
             <div>
               <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-neutral-400 block mb-0.5">
                 Step 1: Select Type
               </span>
               <h3 className="font-display font-bold text-sm text-neutral-900">
-                Choose what to add
+                Choose Document Category
               </h3>
             </div>
 
-            {/* Vertical Connected Tab Buttons */}
+            {/* Vertical Tab Buttons */}
             <div className="flex flex-col space-y-2 relative">
-              
-              {/* Tab 1: Bank Statement */}
-              <button
-                type="button"
-                onClick={() => handleCategoryChange('BANK_STATEMENT')}
-                className={clsx(
-                  "text-left p-3.5 border transition-all cursor-pointer flex items-center justify-between gap-2",
-                  category === 'BANK_STATEMENT'
-                    ? "bg-white border-neutral-900 text-neutral-900 shadow-sm md:-mr-[21px] md:pr-6 md:border-r-white md:z-10 ring-1 md:ring-0 ring-neutral-900"
-                    : "bg-white/70 border-neutral-200 hover:border-neutral-400 hover:bg-white text-neutral-700"
-                )}
-              >
-                <div className="flex items-start space-x-2.5">
-                  <div
+              {Object.values(CATEGORY_CONFIGS).map((cfg) => {
+                const isSelected = category === cfg.id;
+                const IconComponent = cfg.icon;
+
+                return (
+                  <button
+                    key={cfg.id}
+                    type="button"
+                    onClick={() => handleCategoryChange(cfg.id)}
                     className={clsx(
-                      "w-7 h-7 flex items-center justify-center rounded-sm shrink-0 mt-0.5",
-                      category === 'BANK_STATEMENT' ? "bg-neutral-900 text-white" : "bg-neutral-200/80 text-neutral-700"
+                      "text-left p-3 border transition-all cursor-pointer flex items-center justify-between gap-2 rounded-xs",
+                      isSelected
+                        ? "bg-white border-neutral-900 text-neutral-900 shadow-sm md:-mr-[21px] md:pr-6 md:border-r-white md:z-10 ring-1 md:ring-0 ring-neutral-900"
+                        : "bg-white/70 border-neutral-200 hover:border-neutral-400 hover:bg-white text-neutral-700"
                     )}
                   >
-                    <Building2 size={15} />
-                  </div>
-                  <div>
-                    <span className="font-bold text-xs sm:text-sm text-neutral-900 block leading-tight">
-                      {t('ingestion.tabBankStatements', 'Bank Statement')}
-                    </span>
-                    <span className="text-[11px] text-neutral-500 font-sans block mt-0.5 leading-tight">
-                      Account passbook / PDF
-                    </span>
-                  </div>
-                </div>
-
-                <div className="shrink-0 flex items-center">
-                  {category === 'BANK_STATEMENT' ? (
-                    <ChevronRight size={15} className="text-neutral-900 hidden md:block" />
-                  ) : null}
-                </div>
-              </button>
-
-              {/* Tab 2: Bill to Pay (Expense) */}
-              <button
-                type="button"
-                onClick={() => handleCategoryChange('BILL_PAYABLE')}
-                className={clsx(
-                  "text-left p-3.5 border transition-all cursor-pointer flex items-center justify-between gap-2",
-                  category === 'BILL_PAYABLE'
-                    ? "bg-white border-neutral-900 text-neutral-900 shadow-sm md:-mr-[21px] md:pr-6 md:border-r-white md:z-10 ring-1 md:ring-0 ring-neutral-900"
-                    : "bg-white/70 border-neutral-200 hover:border-neutral-400 hover:bg-white text-neutral-700"
-                )}
-              >
-                <div className="flex items-start space-x-2.5">
-                  <div
-                    className={clsx(
-                      "w-7 h-7 flex items-center justify-center rounded-sm shrink-0 mt-0.5",
-                      category === 'BILL_PAYABLE' ? "bg-indigo-900 text-white" : "bg-indigo-50 text-indigo-700"
-                    )}
-                  >
-                    <ArrowDownLeft size={15} />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-1.5">
-                      <span className="font-bold text-xs sm:text-sm text-neutral-900 block leading-tight">
-                        {t('ingestion.tabBillsPayable', 'Bill to Pay')}
-                      </span>
-                      <span className="text-[9px] font-bold uppercase px-1 py-0.2 bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        Out
-                      </span>
+                    <div className="flex items-start space-x-2.5 min-w-0">
+                      <div
+                        className={clsx(
+                          "w-7 h-7 flex items-center justify-center rounded-xs shrink-0 mt-0.5",
+                          isSelected ? cfg.iconBg : "bg-neutral-200/80 text-neutral-700"
+                        )}
+                      >
+                        <IconComponent size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-1.5 flex-wrap">
+                          <span className="font-bold text-xs sm:text-sm text-neutral-900 block leading-tight truncate">
+                            {cfg.title}
+                          </span>
+                          <span className={clsx("text-[9px] font-bold uppercase px-1 py-0.2 border", cfg.badgeColor)}>
+                            {cfg.badge}
+                          </span>
+                        </div>
+                        <span className="text-[10.5px] text-neutral-500 font-sans block mt-0.5 leading-tight truncate">
+                          {cfg.subtitle}
+                        </span>
+                      </div>
                     </div>
-                    <span className="text-[11px] text-neutral-500 font-sans block mt-0.5 leading-tight">
-                      Suppliers, rent, utilities
-                    </span>
-                  </div>
-                </div>
 
-                <div className="shrink-0 flex items-center">
-                  {category === 'BILL_PAYABLE' ? (
-                    <ChevronRight size={15} className="text-neutral-900 hidden md:block" />
-                  ) : null}
-                </div>
-              </button>
-
-              {/* Tab 3: Sales Invoice (Income) */}
-              <button
-                type="button"
-                onClick={() => handleCategoryChange('INVOICE_RECEIVABLE')}
-                className={clsx(
-                  "text-left p-3.5 border transition-all cursor-pointer flex items-center justify-between gap-2",
-                  category === 'INVOICE_RECEIVABLE'
-                    ? "bg-white border-neutral-900 text-neutral-900 shadow-sm md:-mr-[21px] md:pr-6 md:border-r-white md:z-10 ring-1 md:ring-0 ring-neutral-900"
-                    : "bg-white/70 border-neutral-200 hover:border-neutral-400 hover:bg-white text-neutral-700"
-                )}
-              >
-                <div className="flex items-start space-x-2.5">
-                  <div
-                    className={clsx(
-                      "w-7 h-7 flex items-center justify-center rounded-sm shrink-0 mt-0.5",
-                      category === 'INVOICE_RECEIVABLE' ? "bg-emerald-900 text-white" : "bg-emerald-50 text-emerald-700"
-                    )}
-                  >
-                    <ArrowUpRight size={15} />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-1.5">
-                      <span className="font-bold text-xs sm:text-sm text-neutral-900 block leading-tight">
-                        {t('ingestion.tabInvoicesReceivable', 'Sales Invoice')}
-                      </span>
-                      <span className="text-[9px] font-bold uppercase px-1 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        In
-                      </span>
+                    <div className="shrink-0 flex items-center">
+                      {isSelected ? (
+                        <ChevronRight size={15} className="text-neutral-900 hidden md:block" />
+                      ) : null}
                     </div>
-                    <span className="text-[11px] text-neutral-500 font-sans block mt-0.5 leading-tight">
-                      Customer invoices & sales
-                    </span>
-                  </div>
-                </div>
-
-                <div className="shrink-0 flex items-center">
-                  {category === 'INVOICE_RECEIVABLE' ? (
-                    <ChevronRight size={15} className="text-neutral-900 hidden md:block" />
-                  ) : null}
-                </div>
-              </button>
-
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -349,13 +374,12 @@ export default function DocumentUploadZone({
           <div className="p-3 bg-white border border-neutral-200 text-[11px] text-neutral-500 font-sans space-y-1">
             <div className="flex items-center space-x-1.5 font-bold text-neutral-800">
               <Sparkles size={12} className="text-neutral-700" />
-              <span>Automatic Data Reading</span>
+              <span>Multi-Source Pipeline</span>
             </div>
             <p className="text-[10.5px] leading-relaxed text-neutral-500">
-              Upload any clear PDF or scan. Amounts, due dates, and parties are detected automatically.
+              Upload bank accounts, inventory registers, or vendor invoices. Amounts, SKUs, and dates are auto-extracted.
             </p>
           </div>
-
         </div>
 
         {/* RIGHT COLUMN: Connected Main Upload Zone & Form */}
@@ -366,12 +390,10 @@ export default function DocumentUploadZone({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
               <div>
                 <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-neutral-400 block mb-0.5">
-                  Step 2: Upload Files
+                  Step 2: Upload Files • {activeConfig.badge}
                 </span>
                 <h3 className="font-display font-bold text-lg text-neutral-900">
-                  {category === 'BANK_STATEMENT' && 'Upload Bank Statements'}
-                  {category === 'BILL_PAYABLE' && 'Upload Supplier Bills or Expenses'}
-                  {category === 'INVOICE_RECEIVABLE' && 'Upload Customer Sales Invoices'}
+                  {activeConfig.title}
                 </h3>
               </div>
 
@@ -384,12 +406,8 @@ export default function DocumentUploadZone({
             <div className="flex items-start space-x-2 px-3 py-2 bg-amber-50/80 border border-amber-200 text-amber-900 text-xs font-sans">
               <Lightbulb size={14} className="text-amber-700 shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold text-amber-950">Example files to upload: </span>
-                <span className="text-amber-900">
-                  {category === 'BANK_STATEMENT' && t('ingestion.bankExamples', 'SBI, HDFC, ICICI, Axis, or Kotak monthly statement PDF or passbook export')}
-                  {category === 'BILL_PAYABLE' && t('ingestion.payableExamples', 'Raw material bill from Sharma Textiles, shop rent receipt, or electricity bill')}
-                  {category === 'INVOICE_RECEIVABLE' && t('ingestion.receivableExamples', 'Sales tax invoice sent to Apex Retail, client service bill, or GST bill')}
-                </span>
+                <span className="font-semibold text-amber-950">Target Documents: </span>
+                <span className="text-amber-900">{activeConfig.examples}</span>
               </div>
             </div>
           </div>
@@ -411,7 +429,7 @@ export default function DocumentUploadZone({
               ref={fileInputRef}
               type="file"
               multiple
-              accept={category === 'BANK_STATEMENT' ? '.pdf,.csv,.ofx' : '.pdf,.png,.jpg,.jpeg,.csv'}
+              accept={activeConfig.accept}
               onChange={handleFileChange}
               className="hidden"
             />
@@ -419,12 +437,8 @@ export default function DocumentUploadZone({
             <div className="w-11 h-11 bg-white border border-neutral-300 flex items-center justify-center text-neutral-700 shadow-xs mb-2.5">
               {files.length > 1 ? (
                 <Files size={22} className="text-neutral-900" />
-              ) : category === 'BANK_STATEMENT' ? (
-                <FileSpreadsheet size={22} className="text-neutral-900" />
-              ) : category === 'BILL_PAYABLE' ? (
-                <Receipt size={22} className="text-indigo-900" />
               ) : (
-                <FileText size={22} className="text-emerald-900" />
+                <activeConfig.icon size={22} className="text-neutral-900" />
               )}
             </div>
 
@@ -435,19 +449,15 @@ export default function DocumentUploadZone({
                 <span className="text-neutral-900">
                   {files.length} files selected ({totalSizeFormatted})
                 </span>
-              ) : category === 'BANK_STATEMENT' ? (
-                t('ingestion.dropBankStatement', 'Drop your Bank Statement PDF(s) here')
-              ) : category === 'BILL_PAYABLE' ? (
-                t('ingestion.dropPayable', 'Drop your Supplier Bill(s) or Expense PDF(s) here')
               ) : (
-                t('ingestion.dropReceivable', 'Drop your Customer Sales Invoice PDF(s) here')
+                `Drop your ${activeConfig.title} here`
               )}
             </div>
 
             <p className="text-xs text-neutral-500 font-sans max-w-md">
               {files.length > 0
-                ? `${t('ingestion.selectedPrefix', 'Selected:')} ${files.length} ${files.length === 1 ? 'file' : 'files'} (${totalSizeFormatted}) • ${t('ingestion.readyToProcess', 'Ready to scan')} • Drag more files to add`
-                : t('ingestion.fileSupportHint', 'Supports multiple PDFs, photos (JPG, PNG), or CSVs up to 25MB each')}
+                ? `${t('ingestion.selectedPrefix', 'Selected:')} ${files.length} ${files.length === 1 ? 'file' : 'files'} (${totalSizeFormatted}) • Ready to scan • Drag more files to add`
+                : 'Supports PDF, photos (JPG, PNG), CSV, or Excel up to 25MB each'}
             </p>
 
             <div className="mt-3 flex items-center space-x-2">
@@ -474,7 +484,7 @@ export default function DocumentUploadZone({
                 <div className="flex items-center space-x-2">
                   <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
                   <span className="font-bold text-neutral-900">
-                    {files.length} {files.length === 1 ? 'File' : 'Files'} queued for ingestion
+                    {files.length} {files.length === 1 ? 'File' : 'Files'} queued for {activeConfig.badge}
                   </span>
                   <span className="text-neutral-500 font-mono text-[11px]">
                     ({totalSizeFormatted})
@@ -537,7 +547,7 @@ export default function DocumentUploadZone({
                   <Sparkles size={14} className="text-neutral-700 shrink-0 mt-0.5" />
                   <p className="text-[11px] leading-relaxed">
                     <strong className="text-neutral-900 font-semibold">Bulk processing mode active: </strong>
-                    AI will automatically read amounts, due dates, supplier/customer names, and GST numbers from each of the {files.length} files individually.
+                    AI will automatically read line items, SKUs, amounts, due dates, and entity references from each of the {files.length} files individually.
                   </p>
                 </div>
               ) : (
@@ -560,22 +570,36 @@ export default function DocumentUploadZone({
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2.5 border-t border-neutral-200">
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
-                          {category === 'BILL_PAYABLE'
-                            ? t('ingestion.vendorLabel', 'Supplier / Vendor Name')
-                            : t('ingestion.customerLabel', 'Customer / Client Name')}
+                          {category === 'CURRENT_INVENTORY'
+                            ? 'SKU / Product Name'
+                            : category === 'BILL_PAYABLE'
+                            ? 'Supplier / Vendor Name'
+                            : category === 'PRODUCT_SALES'
+                            ? 'Customer / Client Name'
+                            : category === 'RECURRING_EXPENSES'
+                            ? 'Expense Name / Landlord'
+                            : 'Counterparty / Title'}
                         </label>
                         <input
                           type="text"
                           value={partyName}
                           onChange={(e) => setPartyName(e.target.value)}
-                          placeholder={category === 'BILL_PAYABLE' ? 'e.g. Sharma Textiles' : 'e.g. Apex Retail'}
+                          placeholder={
+                            category === 'CURRENT_INVENTORY'
+                              ? 'e.g. Cotton Yarn 40s (100kg)'
+                              : category === 'BILL_PAYABLE'
+                              ? 'e.g. Sharma Textiles'
+                              : category === 'RECURRING_EXPENSES'
+                              ? 'e.g. Shop Rent / BESCOM'
+                              : 'e.g. Apex Retail'
+                          }
                           className="w-full bg-white border border-neutral-300 p-2 text-xs focus:outline-neutral-900"
                         />
                       </div>
 
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
-                          {t('ingestion.amountLabel', 'Amount (₹)')}
+                          {category === 'CURRENT_INVENTORY' ? 'Inventory Valuation (₹)' : 'Amount (₹)'}
                         </label>
                         <input
                           type="number"
@@ -588,13 +612,13 @@ export default function DocumentUploadZone({
 
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
-                          {t('ingestion.invoiceNumLabel', 'Bill / Invoice #')}
+                          {category === 'CURRENT_INVENTORY' ? 'Stock Batch / Register #' : 'Bill / Invoice #'}
                         </label>
                         <input
                           type="text"
                           value={docNumber}
                           onChange={(e) => setDocNumber(e.target.value)}
-                          placeholder="INV-8821"
+                          placeholder={category === 'CURRENT_INVENTORY' ? 'STK-2026-09' : 'INV-8821'}
                           className="w-full bg-white border border-neutral-300 p-2 text-xs focus:outline-neutral-900 font-mono"
                         />
                       </div>
@@ -602,8 +626,10 @@ export default function DocumentUploadZone({
                       <div>
                         <label className="block font-semibold text-neutral-700 mb-1">
                           {category === 'BILL_PAYABLE'
-                            ? t('ingestion.dueDateLabel', 'Payment Due Date')
-                            : t('ingestion.expectedDateLabel', 'Expected Payment Date')}
+                            ? 'Payment Due Date'
+                            : category === 'CURRENT_INVENTORY'
+                            ? 'Snapshot Date'
+                            : 'Date / Due Date'}
                         </label>
                         <input
                           type="date"
@@ -637,8 +663,8 @@ export default function DocumentUploadZone({
                   <Loader2 size={14} className="animate-spin" />
                   <span>
                     {files.length > 1
-                      ? t('ingestion.processingDocumentBtnBulk', `Reading ${files.length} Documents...`, { count: files.length })
-                      : t('ingestion.processingDocumentBtn', 'Reading Document...')}
+                      ? `Reading ${files.length} Documents...`
+                      : 'Reading Document...'}
                   </span>
                 </>
               ) : (
@@ -646,8 +672,8 @@ export default function DocumentUploadZone({
                   {files.length > 1 ? <Files size={14} /> : <UploadCloud size={14} />}
                   <span>
                     {files.length > 1
-                      ? t('ingestion.uploadAndProcessBtnBulk', `Scan & Save ${files.length} Documents`, { count: files.length })
-                      : t('ingestion.uploadAndProcessBtn', 'Scan & Save Document')}
+                      ? `Scan & Save ${files.length} Documents`
+                      : `Scan & Save ${activeConfig.badge}`}
                   </span>
                 </>
               )}
@@ -655,7 +681,7 @@ export default function DocumentUploadZone({
 
             <div className="flex items-center space-x-1.5 text-[11px] text-neutral-500 font-sans">
               <Lock size={12} className="text-neutral-400 shrink-0" />
-              <span>{t('ingestion.privacyNote', '100% Private & Safe: Your documents are processed securely and never shared.')}</span>
+              <span>100% Private & Safe: Encrypted AES-256 storage and deterministic extraction.</span>
             </div>
           </div>
 
@@ -665,8 +691,8 @@ export default function DocumentUploadZone({
               <div className="flex items-center justify-between text-neutral-800 font-semibold">
                 <span>
                   {files.length > 1
-                    ? `Processing ${files.length} Documents in Bulk`
-                    : t('ingestion.processingProgress', 'Processing Document')}
+                    ? `Processing ${files.length} Documents (${activeConfig.title})`
+                    : `Processing ${activeConfig.title}`}
                 </span>
                 <span>{t('ingestion.stepOf', { current: uploadStep, total: 3 })}</span>
               </div>
@@ -681,20 +707,20 @@ export default function DocumentUploadZone({
                 {uploadStep === 1 && (
                   <span>
                     {files.length > 1
-                      ? `1/3: Uploading ${files.length} files securely...`
-                      : t('ingestion.step1', '1/3: Uploading file safely...')}
+                      ? `1/3: Uploading ${files.length} files securely to S3...`
+                      : '1/3: Uploading file safely to S3...'}
                   </span>
                 )}
                 {uploadStep === 2 && (
                   <span>
                     {files.length > 1
-                      ? `2/3: Reading amounts, dates, and party details across ${files.length} documents...`
-                      : t('ingestion.step2', '2/3: Reading amounts, dates, and party details...')}
+                      ? `2/3: Reading line items, amounts, and dates across ${files.length} documents...`
+                      : '2/3: Reading line items, amounts, and metadata...'}
                   </span>
                 )}
                 {uploadStep === 3 && (
                   <span>
-                    {t('ingestion.step3', '3/3: Updating your cash balance and records...')}
+                    3/3: Updating cash balance, inventory balances, and forecast...
                   </span>
                 )}
               </div>
