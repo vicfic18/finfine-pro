@@ -27,6 +27,7 @@ from finfine_agent.tools import (
     get_latest_balance,
     get_transactions,
     get_upcoming_obligations,
+    predict_cash_flow_sagemaker,
 )
 
 
@@ -122,6 +123,7 @@ def create_agent(
             csv_tool,
             business_csv_tool,
             code_tool,
+            predict_cash_flow_sagemaker,
         ],
         **trace_options,
     )

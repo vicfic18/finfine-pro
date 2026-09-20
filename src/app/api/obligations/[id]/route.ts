@@ -4,6 +4,7 @@ import {
   updateObligation,
   deleteObligation,
 } from '@/lib/obligation-store';
+import { restartPredictionAndRefreshMetrics } from '@/lib/financial-store';
 
 /**
  * GET /api/obligations/[id] — Get a single obligation by ID
@@ -53,6 +54,7 @@ export async function PUT(
       );
     }
 
+    await restartPredictionAndRefreshMetrics({ reason: `Obligation Updated (${id})` });
     return NextResponse.json({ obligation: updated });
   } catch (err: any) {
     console.error('Failed to update obligation:', err);
@@ -81,7 +83,8 @@ export async function DELETE(
       );
     }
 
-    return NextResponse.json({ success: true });
+    await restartPredictionAndRefreshMetrics({ reason: `Obligation Deleted (${id})` });
+    return NextResponse.json({ success: true, predictionRestarted: true });
   } catch (err: any) {
     console.error('Failed to delete obligation:', err);
     return NextResponse.json(

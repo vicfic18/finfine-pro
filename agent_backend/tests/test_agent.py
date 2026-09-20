@@ -48,6 +48,7 @@ def test_create_agent_registers_financial_and_code_tools() -> None:
         "export_transactions_csv",
         "export_business_data_csv",
         "run_financial_python",
+        "predict_cash_flow_sagemaker",
     ]
     assert "Never invent" in captured["system_prompt"]
     assert "verify a total returned by a data tool" in captured["system_prompt"]

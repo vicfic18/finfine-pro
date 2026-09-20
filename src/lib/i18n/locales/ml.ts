@@ -42,6 +42,7 @@ export const ml = {
     dashboard: 'ഡാഷ്‌ബോർഡ്',
     documents: 'ഡോക്യുമെന്റുകൾ',
     obligations: 'ബാധ്യതകൾ',
+    taxCompliance: 'നികുതിയും പാലിക്കലും',
     chat: 'ചാറ്റ് സഹായം',
     settings: 'ക്രമീകരണങ്ങൾ',
     signOut: 'സൈൻ ഔട്ട്',

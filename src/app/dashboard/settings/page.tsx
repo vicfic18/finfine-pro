@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import Link from 'next/link';
 import {
   Building2,
   ShieldAlert,
@@ -11,9 +12,12 @@ import {
   AlertTriangle,
   RefreshCw,
   Languages,
+  ShieldCheck,
+  ArrowUpRight,
 } from 'lucide-react';
 import LanguageSelector from '@/components/ui/LanguageSelector';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
+import BrandLogo from '@/components/ui/BrandLogo';
 
 interface MerchantSettings {
   tenantId: string;
@@ -121,100 +125,105 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col max-w-4xl mx-auto w-full font-sans bg-white border border-neutral-200 divide-y divide-neutral-200">
-      {/* Header */}
-      <header className="p-6 sm:p-8 bg-white">
-        <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
-          FinFine Pro
+    <div className="flex flex-col max-w-4xl mx-auto w-full font-sans space-y-6 pb-16">
+      {/* 1. Header with Breadcrumbs */}
+      <div className="space-y-2">
+        <div className="flex items-center space-x-2 text-xs font-medium text-neutral-400">
+          <Link href="/dashboard" className="hover:opacity-80 transition-opacity flex items-center">
+            <BrandLogo size="sm" />
+          </Link>
+          <span>/</span>
+          <span className="text-neutral-900 font-semibold">{t('nav.settings', 'Settings')}</span>
         </div>
-        <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight">
-          {t('settings.title')}
-        </h1>
-        <p className="text-xs sm:text-sm text-neutral-500 mt-1">
-          {t('settings.subtitle')}
-        </p>
-      </header>
+
+        <header className="pt-1">
+          <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight leading-tight">
+            {t('settings.title', 'Merchant & Financial Settings')}
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-500 mt-1">
+            {t('settings.subtitle', 'Configure business identity, legal identifiers, liquidity safety buffers, and language preferences.')}
+          </p>
+        </header>
+      </div>
 
       {/* Notifications */}
       {saveSuccess && (
-        <div className="p-4 bg-emerald-50 text-emerald-900 text-xs font-medium flex items-center space-x-2 border-b border-emerald-100">
+        <div className="p-4 bg-emerald-50 text-emerald-900 text-xs font-medium flex items-center space-x-2 border border-emerald-200 animate-in fade-in">
           <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-          <span>{t('settings.savedSuccess')}</span>
+          <span>{t('settings.savedSuccess', 'Settings successfully updated.')}</span>
         </div>
       )}
 
       {resetSuccessMessage && (
-        <div className="p-4 bg-amber-50 text-amber-900 text-xs font-medium flex items-center space-x-2 border-b border-amber-100">
+        <div className="p-4 bg-amber-50 text-amber-900 text-xs font-medium flex items-center space-x-2 border border-amber-200 animate-in fade-in">
           <CheckCircle2 size={16} className="text-amber-600 shrink-0" />
           <span>{resetSuccessMessage}</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-4 bg-rose-50 text-rose-900 text-xs font-medium flex items-center space-x-2 border-b border-rose-100">
-          <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+        <div className="p-4 bg-red-50 text-red-900 text-xs font-medium flex items-center space-x-2 border border-red-200 animate-in fade-in">
+          <AlertTriangle size={16} className="text-red-600 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
       {/* Main Settings Form */}
-      <form onSubmit={handleSave} className="divide-y divide-neutral-200">
-        {/* Section 1: Business Profile */}
-        <div className="p-6 sm:p-8 space-y-6 bg-white">
+      <form onSubmit={handleSave} className="bg-white border border-neutral-200 divide-y divide-neutral-200 shadow-xs">
+        {/* Section 1: Business Identity & Identifiers */}
+        <div className="p-6 sm:p-8 space-y-6">
           <div className="flex items-center space-x-2">
             <Building2 size={18} className="text-neutral-700" />
             <h2 className="font-display font-bold text-xl text-neutral-900">
-              {t('settings.profileSection')}
+              {t('settings.profileSection', 'Business Identity & Legal Identifiers')}
             </h2>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
             <div className="space-y-1.5 sm:col-span-2">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                {t('settings.businessName')}
+                {t('settings.businessName', 'Registered Legal Name')}
               </label>
               <input
                 type="text"
                 required
                 value={settings.businessName}
                 onChange={(e) => setSettings({ ...settings, businessName: e.target.value })}
-                placeholder={t('settings.businessNamePlaceholder')}
+                placeholder={t('settings.businessNamePlaceholder', 'e.g. Rameshwaram Enterprise Pvt Ltd')}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 text-neutral-900 font-medium focus:outline-none focus:border-neutral-900 transition-colors"
               />
               <span className="text-[10px] text-neutral-400">
-                {t('settings.businessNameSub')}
+                {t('settings.businessNameSub', 'Used on invoices and statutory financial filings')}
               </span>
             </div>
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                {t('settings.tradeName')}
+                {t('settings.tradeName', 'Brand / Trade Name')}
               </label>
               <input
                 type="text"
                 value={settings.tradeName || ''}
                 onChange={(e) => setSettings({ ...settings, tradeName: e.target.value })}
-                placeholder={t('settings.tradeNamePlaceholder')}
+                placeholder={t('settings.tradeNamePlaceholder', 'e.g. Rameshwaram Stores')}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 text-neutral-900 focus:outline-none focus:border-neutral-900 transition-colors"
               />
             </div>
 
             <div className="space-y-1.5">
               <label className="font-semibold text-neutral-700 uppercase tracking-wider text-[11px]">
-                {t('settings.industrySector')}
+                {t('settings.industrySector', 'Primary Industry Sector')}
               </label>
               <select
                 value={settings.category || 'Retail & Distribution'}
                 onChange={(e) => setSettings({ ...settings, category: e.target.value })}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 text-neutral-900 focus:outline-none focus:border-neutral-900 transition-colors"
               >
-                <option value="Retail & Distribution">{t('settings.sectors.retail')}</option>
-                <option value="Textiles & Apparel">{t('settings.sectors.textiles')}</option>
-                <option value="Manufacturing & Production">{t('settings.sectors.manufacturing')}</option>
-                <option value="FMCG & Groceries">{t('settings.sectors.fmcg')}</option>
-                <option value="Services & Consulting">{t('settings.sectors.services')}</option>
-                <option value="Electronics & Hardware">{t('settings.sectors.electronics')}</option>
-                <option value="Other">{t('settings.sectors.other')}</option>
+                <option value="Retail & Distribution">Retail & Distribution (Kirana, Supermarkets)</option>
+                <option value="Jewelry & Wedding Apparel">Jewelry, Wedding Apparel & Event Venues</option>
+                <option value="Corporate B2B & Manufacturing">Corporate B2B & Industrial Manufacturing</option>
+                <option value="IT & Professional Services">IT, Digital Agencies & Consultancies</option>
+                <option value="Custom Sector">Custom MSME Configuration</option>
               </select>
             </div>
 

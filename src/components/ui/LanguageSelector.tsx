@@ -2,17 +2,19 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Globe, Check, ChevronDown } from 'lucide-react';
+import { Globe, Check } from 'lucide-react';
 import { SUPPORTED_LANGUAGES, setAppLanguage, type LanguageCode } from '@/lib/i18n';
 import clsx from 'clsx';
 
 interface LanguageSelectorProps {
   variant?: 'compact' | 'full' | 'pills';
+  placement?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
   className?: string;
 }
 
 export default function LanguageSelector({
   variant = 'compact',
+  placement = 'top-right',
   className,
 }: LanguageSelectorProps) {
   const { i18n } = useTranslation();
@@ -75,33 +77,37 @@ export default function LanguageSelector({
     );
   }
 
-  // 2. Compact / Full Dropdown Variant
+  // 2. Compact / Dropdown Variant (Icon-only trigger)
   return (
     <div className={clsx('relative inline-block text-left font-sans', className)} ref={dropdownRef}>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={clsx(
-          'flex items-center space-x-2 px-3 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 shadow-2xs cursor-pointer',
+          'flex items-center justify-center w-9 h-9 rounded-full border transition-all duration-200 shadow-2xs cursor-pointer',
           isOpen
             ? 'border-neutral-900 bg-neutral-100 text-neutral-900'
-            : 'border-neutral-300 hover:border-neutral-900 bg-white/90 text-neutral-800 backdrop-blur-xs'
+            : 'border-neutral-300 hover:border-neutral-900 bg-white/90 text-neutral-700 hover:text-neutral-900 backdrop-blur-xs'
         )}
         aria-expanded={isOpen}
         aria-haspopup="true"
-        title="Change Language"
+        aria-label={`Change Language (${currentLang.name})`}
+        title={`Change Language (${currentLang.name})`}
       >
-        <Globe size={14} className="text-neutral-600 shrink-0" />
-        <span className="font-medium text-xs">{currentLang.nativeName}</span>
-        <ChevronDown
-          size={12}
-          className={clsx('text-neutral-400 transition-transform duration-200', isOpen && 'rotate-180')}
-        />
+        <Globe size={18} className="shrink-0" />
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-1.5 w-48 bg-white border border-neutral-200 shadow-xl rounded-xl py-1 z-50 animate-fadeIn divide-y divide-neutral-100">
+        <div
+          className={clsx(
+            'absolute w-48 bg-white border border-neutral-200 shadow-xl rounded-xl py-1 z-50 animate-fadeIn divide-y divide-neutral-100',
+            placement === 'top-right' && 'bottom-full left-0 mb-2',
+            placement === 'top-left' && 'bottom-full right-0 mb-2',
+            placement === 'bottom-right' && 'top-full left-0 mt-2',
+            placement === 'bottom-left' && 'top-full right-0 mt-2'
+          )}
+        >
           <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
             Select Language
           </div>

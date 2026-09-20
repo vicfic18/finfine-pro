@@ -21,6 +21,7 @@ interface AddObligationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreated: () => void;
+  initialData?: any | null;
 }
 
 type ObligationTypeOption = 'PAYABLE' | 'RECEIVABLE';
@@ -54,31 +55,64 @@ export default function AddObligationModal({
   isOpen,
   onClose,
   onCreated,
+  initialData,
 }: AddObligationModalProps) {
   const { t } = useTranslation();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3>(initialData ? 2 : 1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Step 1: Category
-  const [selectedCategory, setSelectedCategory] = useState<CategoryOption | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryOption | null>(() => {
+    if (initialData?.category) {
+      return CATEGORY_OPTIONS.find((c) => c.key === initialData.category) || CATEGORY_OPTIONS[0];
+    }
+    return null;
+  });
 
   // Step 2: Details
-  const [title, setTitle] = useState('');
-  const [counterpartyName, setCounterpartyName] = useState('');
-  const [amount, setAmount] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [penaltyRate, setPenaltyRate] = useState('');
-  const [allowPartialPayment, setAllowPartialPayment] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [counterpartyName, setCounterpartyName] = useState(initialData?.counterpartyName || '');
+  const [amount, setAmount] = useState(initialData?.amount ? String(initialData.amount) : '');
+  const [dueDate, setDueDate] = useState(initialData?.dueDate || '');
+  const [penaltyRate, setPenaltyRate] = useState(initialData?.penaltyRatePerDay ? String(initialData.penaltyRatePerDay) : '');
+  const [allowPartialPayment, setAllowPartialPayment] = useState(initialData?.allowPartialPayment || false);
+  const [notes, setNotes] = useState(initialData?.notes || '');
 
   // Recurrence
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [frequency, setFrequency] = useState('MONTHLY');
-  const [dueDayOfMonth, setDueDayOfMonth] = useState('');
+  const [isRecurring, setIsRecurring] = useState(initialData?.isRecurring || false);
+  const [frequency, setFrequency] = useState(initialData?.frequency || 'MONTHLY');
+  const [dueDayOfMonth, setDueDayOfMonth] = useState(initialData?.dueDayOfMonth ? String(initialData.dueDayOfMonth) : '');
 
   // Supplier-specific
-  const [creditPeriodDays, setCreditPeriodDays] = useState('');
+  const [creditPeriodDays, setCreditPeriodDays] = useState(initialData?.creditPeriodDays ? String(initialData.creditPeriodDays) : '');
+
+  React.useEffect(() => {
+    if (initialData) {
+      setStep(2);
+      const cat = CATEGORY_OPTIONS.find((c) => c.key === initialData.category) || {
+        key: initialData.category || 'OTHER',
+        label: initialData.category || 'Other',
+        icon: Package,
+        type: initialData.type || 'PAYABLE',
+        isStatutory: initialData.isStatutory,
+      };
+      setSelectedCategory(cat);
+      setTitle(initialData.title || '');
+      setCounterpartyName(initialData.counterpartyName || '');
+      setAmount(initialData.amount ? String(initialData.amount) : '');
+      setDueDate(initialData.dueDate || '');
+      setPenaltyRate(initialData.penaltyRatePerDay ? String(initialData.penaltyRatePerDay) : '');
+      setAllowPartialPayment(initialData.allowPartialPayment || false);
+      setNotes(initialData.notes || '');
+      setIsRecurring(initialData.isRecurring || false);
+      setFrequency(initialData.frequency || 'MONTHLY');
+      setDueDayOfMonth(initialData.dueDayOfMonth ? String(initialData.dueDayOfMonth) : '');
+      setCreditPeriodDays(initialData.creditPeriodDays ? String(initialData.creditPeriodDays) : '');
+    } else {
+      resetForm();
+    }
+  }, [initialData, isOpen]);
 
   const resetForm = () => {
     setStep(1);
@@ -161,15 +195,18 @@ export default function AddObligationModal({
         body.creditPeriodDays = Number(creditPeriodDays);
       }
 
-      const res = await fetch('/api/obligations', {
-        method: 'POST',
+      const url = initialData?.id ? `/api/obligations/${initialData.id}` : '/api/obligations';
+      const method = initialData?.id ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.error || 'Failed to create obligation');
+        throw new Error(errData.error || 'Failed to save obligation');
       }
 
       handleClose();
@@ -197,7 +234,9 @@ export default function AddObligationModal({
                 : t('obligationManager.step3Title', 'Review & Submit')}
             </div>
             <h2 className="font-display font-bold text-xl text-neutral-900">
-              {t('obligationManager.addObligation', 'Add Obligation')}
+              {initialData?.id
+                ? t('obligationManager.editObligation', 'Edit Obligation')
+                : t('obligationManager.addObligation', 'Add Obligation')}
             </h2>
           </div>
           <button

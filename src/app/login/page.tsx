@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
-import LanguageSelector from '@/components/ui/LanguageSelector';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import {
   signIn,
   signUp,
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { t } = useTranslation();
 
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,6 +42,7 @@ export default function LoginPage() {
         router.push('/dashboard');
       } catch {
         // User not logged in, stay on login page
+        setCheckingAuth(false);
       }
     }
     checkAuth();
@@ -255,6 +257,14 @@ export default function LoginPage() {
     }
   };
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
+        <FinFineProLoader />
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen bg-[#FFFFFF] text-[#111215] flex flex-col justify-between overflow-hidden select-none">
       {/* Outer Architectural Frame */}
@@ -262,7 +272,7 @@ export default function LoginPage() {
         <div className="absolute inset-1 border border-neutral-900/10" />
       </div>
 
-      {/* Navbar: Brand Centered + Back to Home + Language Selector */}
+      {/* Navbar: Brand Centered + Back to Home */}
       <nav className="relative z-30 w-full px-6 sm:px-14 py-6 sm:py-9 flex items-center justify-between">
         <Link
           href="/"
@@ -276,9 +286,7 @@ export default function LoginPage() {
           {t('common.appName', 'FinFine Pro')}
         </span>
 
-        <div className="flex items-center space-x-2">
-          <LanguageSelector variant="compact" />
-        </div>
+        <div className="w-16" />
       </nav>
 
       {/* Main Authentication Card */}

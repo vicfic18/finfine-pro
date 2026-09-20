@@ -42,6 +42,7 @@ export const ta = {
     dashboard: 'டாஷ்போர்டு',
     documents: 'ஆவணங்கள்',
     obligations: 'கடப்பாடுகள்',
+    taxCompliance: 'வரி மற்றும் இணக்கம்',
     chat: 'உரையாடல்',
     settings: 'அமைப்புகள்',
     signOut: 'வெளியேறு',

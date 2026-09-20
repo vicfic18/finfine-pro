@@ -178,10 +178,10 @@ function ChatboxContent() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const starterPrompts = [
-    t('chat.starter1'),
-    t('chat.starter2'),
-    t('chat.starter3'),
-    t('chat.starter4'),
+    t('chat.starter1', 'How many days of cash runway do I currently have?'),
+    t('chat.starter2', 'What are my upcoming GST, TDS, and statutory deadlines?'),
+    t('chat.starter3', 'How will festive sales surge impact my working capital?'),
+    t('chat.starter4', 'How can I optimize debtor collection velocity and DSO?'),
   ];
 
   const hasConversation = messages.length > 0;
@@ -456,7 +456,10 @@ function ChatboxContent() {
             {isPending && <ThinkingBar onStop={stopRequest} />}
             <PromptInput value={draft} onValueChange={setDraft} onSubmit={() => void sendMessage(draft)} disabled={!isHydrated || isPending || isConversationLoading}>
               <PromptInputTextarea placeholder={t('chat.inputPlaceholder')} maxLength={MAX_PROMPT_LENGTH} />
-              <PromptInputActions className="justify-end">
+              <PromptInputActions className="justify-between items-center">
+                <span className="text-[10px] text-neutral-400 font-mono hidden sm:inline pl-2 select-none">
+                  Press ⌘↵ or Enter to send
+                </span>
                 <PromptInputAction tooltip={t('chat.sendMessageTooltip')}><button type="button" onClick={() => void sendMessage(draft)} disabled={!isHydrated || isPending || !draft.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400" aria-label={t('chat.sendMessageTooltip')}><ArrowUp size={17} strokeWidth={2.2} /></button></PromptInputAction>
               </PromptInputActions>
             </PromptInput>

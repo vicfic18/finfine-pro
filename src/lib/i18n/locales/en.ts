@@ -42,6 +42,7 @@ export const en = {
     dashboard: 'Dashboard',
     documents: 'Documents',
     obligations: 'Obligations',
+    taxCompliance: 'Tax Compliance',
     chat: 'Chat',
     settings: 'Settings',
     signOut: 'Sign Out',
