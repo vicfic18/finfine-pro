@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud, Settings } from 'lucide-react';
+import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud, Settings, ShieldCheck, Sliders } from 'lucide-react';
 import clsx from 'clsx';
 import LanguageSelector from '@/components/ui/LanguageSelector';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
@@ -59,8 +59,10 @@ export default function DashboardLayout({
 
   const navItems = [
     { key: 'dashboard', name: t('nav.dashboard', 'Dashboard'), href: '/dashboard', icon: LayoutDashboard },
+    { key: 'predictions', name: t('nav.predictions', 'Predictions'), href: '/dashboard/predictions', icon: Sliders },
     { key: 'documents', name: t('nav.documents', 'Documents'), href: '/dashboard/ingestion', icon: UploadCloud },
     { key: 'obligations', name: t('nav.obligations', 'Obligations'), href: '/dashboard/obligations', icon: CalendarClock },
+    { key: 'taxCompliance', name: t('nav.taxCompliance', 'Tax Compliance'), href: '/dashboard/tax-compliance', icon: ShieldCheck },
     { key: 'chat', name: t('nav.chat', 'Chat'), href: '/dashboard/chat', icon: MessageSquare },
     { key: 'settings', name: t('nav.settings', 'Settings'), href: '/dashboard/settings', icon: Settings },
   ];

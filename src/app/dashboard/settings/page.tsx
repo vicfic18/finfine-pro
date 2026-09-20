@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import Link from 'next/link';
 import {
   Building2,
   ShieldAlert,
@@ -11,6 +12,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Languages,
+  ShieldCheck,
+  ArrowUpRight,
 } from 'lucide-react';
 import LanguageSelector from '@/components/ui/LanguageSelector';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
@@ -156,6 +159,31 @@ export default function SettingsPage() {
           <span>{errorMessage}</span>
         </div>
       )}
+
+      {/* Statutory Tax Profile Banner */}
+      <div className="p-4 sm:p-6 bg-neutral-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-200">
+        <div className="flex items-center space-x-3">
+          <div className="p-2.5 bg-neutral-900 text-white shrink-0">
+            <ShieldCheck size={20} />
+          </div>
+          <div>
+            <div className="font-bold text-sm text-neutral-900">
+              Tax & Statutory Compliance Configuration
+            </div>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Configure entity classification, GST schemes, employee thresholds, and mandatory tax deadlines.
+            </p>
+          </div>
+        </div>
+
+        <Link
+          href="/dashboard/tax-compliance"
+          className="px-4 py-2 bg-neutral-900 text-white text-xs font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors shrink-0 flex items-center space-x-1 self-start sm:self-auto"
+        >
+          <span>Open Tax Settings</span>
+          <ArrowUpRight size={14} />
+        </Link>
+      </div>
 
       {/* Main Settings Form */}
       <form onSubmit={handleSave} className="divide-y divide-neutral-200">

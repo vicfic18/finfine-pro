@@ -42,6 +42,7 @@ export const hi = {
     dashboard: 'डैशबोर्ड',
     documents: 'दस्तावेज़',
     obligations: 'देनदारियां',
+    taxCompliance: 'कर और अनुपालन',
     chat: 'चैट सहायक',
     settings: 'सेटिंग्स',
     signOut: 'साइन आउट',

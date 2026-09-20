@@ -13,9 +13,21 @@ export default function FestiveLiquidityRadar({ data }: FestiveLiquidityRadarPro
   const { t } = useTranslation();
   const mlForecast = data.mlForecast;
   const milestones = mlForecast?.upcomingMilestones || [];
-  const festiveUplift = mlForecast?.festiveUpliftInr ?? 125000;
-  const statutoryDrain = mlForecast?.statutoryTaxDrainInr ?? 65000;
+  const festiveUplift = mlForecast?.festiveUpliftInr ?? 0;
+  const statutoryDrain = mlForecast?.statutoryTaxDrainInr ?? data.statutoryLockbox ?? 0;
   const p10Min = mlForecast?.confidenceInterval?.p10MinBalance ?? Math.round(data.totalLiquidBalance * 0.7);
+
+  const upcomingFestivalsList = milestones
+    .filter((m) => m.type === 'FESTIVAL' || m.type === 'MEGA_SALE')
+    .map((m) => m.title)
+    .slice(0, 3)
+    .join(', ');
+
+  const upcomingTaxesList = milestones
+    .filter((m) => m.type === 'STATUTORY_TAX')
+    .map((m) => m.title)
+    .slice(0, 3)
+    .join(', ');
 
   return (
     <div className="w-full bg-white divide-y divide-neutral-200">
@@ -37,7 +49,7 @@ export default function FestiveLiquidityRadar({ data }: FestiveLiquidityRadarPro
           <p className="text-xs text-neutral-500 mt-1 max-w-2xl">
             {t(
               'festive.subtitle',
-              'Indian festival demand surges (Diwali, Dhanteras, BBD) and statutory tax traps (GSTR-3B, TDS, Advance Tax) projected on sparse cash patterns.'
+              'Indian retail demand surges and statutory compliance deadlines projected against your liquidity patterns.'
             )}
           </p>
         </div>
@@ -71,7 +83,7 @@ export default function FestiveLiquidityRadar({ data }: FestiveLiquidityRadarPro
               +₹{festiveUplift.toLocaleString('en-IN')}
             </div>
             <p className="text-[11px] text-neutral-500 mt-1">
-              Estimated consumer UPI surge from Navratri, Dhanteras & Diwali
+              {upcomingFestivalsList ? `Projected surge from ${upcomingFestivalsList}` : 'Calculated consumer demand uplift across horizon'}
             </p>
           </div>
         </div>
@@ -89,7 +101,7 @@ export default function FestiveLiquidityRadar({ data }: FestiveLiquidityRadarPro
               -₹{statutoryDrain.toLocaleString('en-IN')}
             </div>
             <p className="text-[11px] text-neutral-500 mt-1">
-              GSTR-3B (20th), TDS (7th) & Advance Tax ring-fenced
+              {upcomingTaxesList ? `${upcomingTaxesList} ring-fenced` : 'Statutory tax liabilities ring-fenced for compliance'}
             </p>
           </div>
         </div>
@@ -119,25 +131,104 @@ export default function FestiveLiquidityRadar({ data }: FestiveLiquidityRadarPro
           <Sparkles className="w-3.5 h-3.5 text-amber-500 mr-1.5" />
           {t('festive.strategicGuidance', 'CFO AI Recommendation • Indian Festive Window')}
         </div>
+        {/* Dynamic CFO Recommendations derived strictly from active store data */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-neutral-700">
-          <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
-            <ArrowUpRight className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-neutral-900 block mb-0.5">
-                Pre-Festive Inventory Stocking Window
-              </span>
-              Purchase wholesale inventory before festival surges to capture bulk trade discounts (typically 2-4% cash discounts) and avoid supply delays.
-            </div>
-          </div>
-          <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
-            <ShieldAlert className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold text-neutral-900 block mb-0.5">
-                GSTR-3B Tax Ring-Fencing (20th of Month)
-              </span>
-              Do not deploy full weekend cash collections into inventory on the 18th; ring-fence required GST challan funds to avert 18% p.a. statutory interest penalties.
-            </div>
-          </div>
+          {/* Card 1: Festive Inventory or Working Capital Guidance */}
+          {(() => {
+            const upcomingFestivals = milestones.filter(
+              (m) => m.type === 'FESTIVAL' || m.type === 'MEGA_SALE'
+            );
+            if (upcomingFestivals.length > 0) {
+              const nextFest = upcomingFestivals[0];
+              const recommendedCapital = Math.min(
+                data.spendableLiquidity,
+                Math.max(15000, Math.round(data.netDailyBurn * 7))
+              );
+              return (
+                <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
+                  <ArrowUpRight className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-neutral-900 block mb-0.5">
+                      Pre-Stocking Window: {nextFest.title} ({nextFest.date})
+                    </span>
+                    {nextFest.expectedImpact} With current spendable liquidity of ₹
+                    {data.spendableLiquidity.toLocaleString('en-IN')}, allocate ₹
+                    {recommendedCapital.toLocaleString('en-IN')} for bulk stock replenishment 5-7 days
+                    prior.
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
+                <ArrowUpRight className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-neutral-900 block mb-0.5">
+                    Baseline Working Capital Velocity
+                  </span>
+                  No festive peaks active in current horizon. Cash operations rely on baseline collections
+                  (₹{data.inflowsNext15Days.toLocaleString('en-IN')} receivables vs ₹
+                  {data.commitmentsNext15Days.toLocaleString('en-IN')} commitments in next 15 days).
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Card 2: Statutory Tax Ring-Fencing or Solvency Protection */}
+          {(() => {
+            const pendingTaxes = (data.statutoryCompliance || [])
+              .filter((t) => t.amountDue > 0)
+              .sort((a, b) => a.daysLeft - b.daysLeft);
+
+            if (pendingTaxes.length > 0) {
+              const nextTax = pendingTaxes[0];
+              const isAffordable = data.totalLiquidBalance >= nextTax.amountDue;
+              return (
+                <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
+                  <ShieldAlert className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-neutral-900 block mb-0.5">
+                      Statutory Ring-Fencing: {nextTax.taxName} ({nextTax.form})
+                    </span>
+                    ₹{nextTax.amountDue.toLocaleString('en-IN')} due in {nextTax.daysLeft} days ({nextTax.dueDate}).{' '}
+                    {isAffordable
+                      ? `Ring-fence this amount in lockbox to avert late-filing penalty (${nextTax.penaltyIfMissedDaily}).`
+                      : `ATTENTION: Liquid balance (₹${data.totalLiquidBalance.toLocaleString('en-IN')}) is below tax due! Expedite debtor collections.`}
+                  </div>
+                </div>
+              );
+            }
+
+            if (data.bufferBreachDay !== null) {
+              return (
+                <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-neutral-900 block mb-0.5">
+                      Liquidity Buffer Warning (Day +{data.bufferBreachDay})
+                    </span>
+                    Projected balance breaches the ₹{data.minimumCashBuffer.toLocaleString('en-IN')} safety
+                    cushion on Day {data.bufferBreachDay}. Collect ₹
+                    {data.inflowsNext15Days.toLocaleString('en-IN')} in outstanding receivables to avoid
+                    stress.
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="p-3 bg-white border border-neutral-200 flex items-start space-x-2.5">
+                <ShieldAlert className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-neutral-900 block mb-0.5">
+                    Solvency Health: {data.daysToZero} Days Safe Runway
+                  </span>
+                  No statutory defaults pending. Spendable liquidity of ₹
+                  {data.spendableLiquidity.toLocaleString('en-IN')} is ring-fenced safely above minimum buffer.
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

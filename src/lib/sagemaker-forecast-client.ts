@@ -29,7 +29,12 @@ export interface CashFlowPredictionRequest {
     category?: string;
     isStatutory?: boolean;
   }>;
+  enabledFestivals?: string[];
+  customMultipliers?: Record<string, number>;
+  enableWeekendSurge?: boolean;
   indianContextEnabled?: boolean;
+  festivals?: any[];
+  taxRules?: any[];
 }
 
 export interface DailyForecastPoint {
@@ -95,16 +100,18 @@ export function runLocalQuantileForecasting(
 
   const medianInflow = nonZeroInflows.length > 0
     ? nonZeroInflows[Math.floor(nonZeroInflows.length / 2)]
-    : 9500;
+    : 0;
 
   const medianOutflow = nonZeroOutflows.length > 0
     ? nonZeroOutflows[Math.floor(nonZeroOutflows.length / 2)]
-    : 4200;
+    : 0;
 
   // Active days ratio handles sparse transaction patterns
-  const activeRatio = Math.max(0.35, Math.min(0.85, nonZeroInflows.length / Math.max(history.length, 30)));
+  const activeRatio = nonZeroInflows.length > 0
+    ? Math.max(0.2, Math.min(1.0, nonZeroInflows.length / Math.max(history.length, 1)))
+    : 0;
   const baseDailyInflow = medianInflow * activeRatio;
-  const baseDailyBurn = medianOutflow * 0.4;
+  const baseDailyBurn = medianOutflow * 0.35;
 
   // Index obligations by due date
   const oblsByDate: Record<string, Array<(typeof obligations)[0]>> = {};
@@ -131,11 +138,16 @@ export function runLocalQuantileForecasting(
     const curDate = new Date(baseDate);
     curDate.setDate(baseDate.getDate() + i);
     const dateStr = curDate.toISOString().slice(0, 10);
-    const dayOfMonth = curDate.getDate();
 
-    // Indian Context
+    // Indian Context with custom enabled festivals
     const indianCtx = indianEnabled
-      ? getIndianDateContext(curDate)
+      ? getIndianDateContext(curDate, {
+          festivals: req.festivals,
+          taxRules: req.taxRules,
+          enabledFestivals: req.enabledFestivals,
+          customMultipliers: req.customMultipliers,
+          enableWeekendSurge: req.enableWeekendSurge,
+        })
       : {
           isFestivalActive: false,
           activeFestivals: [],
@@ -149,7 +161,7 @@ export function runLocalQuantileForecasting(
     const multiplier = indianCtx.inflowMultiplier;
     const dayInflow = Math.round(baseDailyInflow * multiplier);
 
-    if (multiplier > 1.0) {
+    if (indianCtx.isFestivalActive && multiplier > 1.0) {
       totalFestiveUplift += (dayInflow - baseDailyInflow);
     }
 
@@ -162,19 +174,15 @@ export function runLocalQuantileForecasting(
       .filter((o) => o.type === 'RECEIVABLE')
       .reduce((s, o) => s + Number(o.amount || 0), 0);
 
-    // Statutory Tax checks if not already scheduled as an obligation
-    let statutoryDrain = 0;
-    let statutoryTitle = indianCtx.statutoryObligationName;
-
-    if (dayOfMonth === 20 && !dayObls.some((o) => (o.title || '').includes('GST'))) {
-      statutoryDrain = 38000;
-      statutoryTitle = 'Estimated GSTR-3B Settlement';
-    } else if (dayOfMonth === 7 && !dayObls.some((o) => (o.title || '').includes('TDS'))) {
-      statutoryDrain = 4200;
-      statutoryTitle = 'Estimated TDS Challan (194C/J)';
-    }
-
-    totalStatutoryDrain += statutoryDrain;
+    // Statutory Tax checks from actual obligations
+    const statutoryObls = dayObls.filter(
+      (o) => o.isStatutory || o.category === 'GST_PAYMENT' || o.category === 'TDS_PAYMENT'
+    );
+    const actualStatutoryAmount = statutoryObls.reduce((s, o) => s + Number(o.amount || 0), 0);
+    const statutoryDrain = actualStatutoryAmount;
+    const statutoryTitle = statutoryObls.length > 0
+      ? statutoryObls.map((o) => o.title).join(', ')
+      : indianCtx.statutoryObligationName;
 
     // Total expected inflow & outflow
     const expIn = dayInflow + schedReceivables;
