@@ -51,7 +51,7 @@ export default function BankStatementsTable({
             </span>
           </div>
           <p className="text-xs text-neutral-500 font-sans mt-0.5">
-            {t('ingestion.subtitle')}
+            {t('ingestion.bankStatementsTableSub', 'Your uploaded bank accounts, balances, and transaction records')}
           </p>
         </div>
 

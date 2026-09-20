@@ -2,10 +2,10 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   ScanCommand,
-  GetCommand,
   PutCommand,
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
+import outputs from '../../amplify_outputs.json';
 import { predictCashFlow } from './sagemaker-forecast-client';
 import { getUpcomingIndianMilestones } from './indian-financial-calendar';
 import {
@@ -14,20 +14,36 @@ import {
   getMarketCalendarEvents,
 } from './tax-compliance-store';
 
-const region = process.env.AWS_REGION || 'ap-south-1';
-const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
+type AmplifyOutputs = {
+  auth?: { aws_region?: string };
+  data?: { aws_region?: string };
+  custom?: Record<string, unknown>;
+};
+
+const amplifyOutputs = outputs as unknown as AmplifyOutputs;
+const custom = amplifyOutputs.custom || {};
+const table = (env: string, output: string, fallback: string) => {
+  const value = process.env[env] || custom[output];
+  return typeof value === 'string' && value ? value : fallback;
+};
+const customRegion = typeof custom.awsRegion === 'string' ? custom.awsRegion : undefined;
+const region = process.env.AWS_REGION
+  || amplifyOutputs.data?.aws_region
+  || amplifyOutputs.auth?.aws_region
+  || customRegion
+  || 'ap-south-1';
 
 // DynamoDB Table Names
-const docTableName = process.env.DOCUMENT_RECORD_TABLE_NAME || 'DocumentRecord-ifsueqzwybf6nau7duulv5qweq-NONE';
-const txnTableName = process.env.TRANSACTION_TABLE_NAME || 'Transaction-ifsueqzwybf6nau7duulv5qweq-NONE';
-const obTableName = process.env.OBLIGATION_TABLE_NAME || 'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
-const cashPositionTableName = process.env.CASH_POSITION_TABLE_NAME || 'CashPositionSnapshot-ifsueqzwybf6nau7duulv5qweq-NONE';
-const merchantSettingsTableName = process.env.MERCHANT_SETTINGS_TABLE_NAME || 'MerchantFinancialSettings-ifsueqzwybf6nau7duulv5qweq-NONE';
-const recurringExpenseTableName = process.env.RECURRING_EXPENSE_TABLE_NAME || 'RecurringExpense-ifsueqzwybf6nau7duulv5qweq-NONE';
-const productTableName = process.env.PRODUCT_TABLE_NAME || 'Product-ifsueqzwybf6nau7duulv5qweq-NONE';
-const purchaseTableName = process.env.PURCHASE_TABLE_NAME || 'Purchase-ifsueqzwybf6nau7duulv5qweq-NONE';
-const purchaseLineItemTableName = process.env.PURCHASE_LINE_ITEM_TABLE_NAME || 'PurchaseLineItem-ifsueqzwybf6nau7duulv5qweq-NONE';
-const supplierProfileTableName = process.env.SUPPLIER_PROFILE_TABLE_NAME || 'SupplierProfile-ifsueqzwybf6nau7duulv5qweq-NONE';
+const docTableName = table('DOCUMENT_RECORD_TABLE_NAME', 'documentRecordTableName', 'DocumentRecord');
+const txnTableName = table('TRANSACTION_TABLE_NAME', 'transactionTableName', 'Transaction');
+const obTableName = table('OBLIGATION_TABLE_NAME', 'obligationTableName', 'Obligation');
+const cashPositionTableName = table('CASH_POSITION_TABLE_NAME', 'cashPositionTableName', 'CashPositionSnapshot');
+const merchantSettingsTableName = table('MERCHANT_SETTINGS_TABLE_NAME', 'merchantSettingsTableName', 'MerchantFinancialSettings');
+const recurringExpenseTableName = table('RECURRING_EXPENSE_TABLE_NAME', 'recurringExpenseTableName', 'RecurringExpense');
+const productTableName = table('PRODUCT_TABLE_NAME', 'productTableName', 'Product');
+const purchaseTableName = table('PURCHASE_TABLE_NAME', 'purchaseTableName', 'Purchase');
+const purchaseLineItemTableName = table('PURCHASE_LINE_ITEM_TABLE_NAME', 'purchaseLineItemTableName', 'PurchaseLineItem');
+const supplierProfileTableName = table('SUPPLIER_PROFILE_TABLE_NAME', 'supplierProfileTableName', 'SupplierProfile');
 
 const dynamoClient = new DynamoDBClient({ region });
 const docClient = DynamoDBDocumentClient.from(dynamoClient, {
@@ -36,12 +52,37 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient, {
 
 // In-Memory Cache Configuration
 const MEMORY_CACHE_TTL_MS = 60 * 1000; // 60 seconds
-let memoryCachedData: FinancialMetricData | null = null;
-let memoryCachedTimestamp = 0;
+const memoryCache = new Map<string, { data: FinancialMetricData; timestamp: number }>();
+
+interface LedgerRecord {
+  [key: string]: unknown;
+  id?: string;
+  asOf?: string;
+  totalLiquidCash?: number;
+  bankBalance?: number;
+  rawMetadata?: unknown;
+  date?: string;
+  balanceAfterTransaction?: number;
+  type?: string;
+  amount?: number;
+  isStatutory?: boolean;
+  category?: string;
+  title?: string;
+  isActive?: boolean;
+  frequency?: string;
+  dueDate?: string;
+  priorityWeight?: number;
+  counterpartyName?: string;
+  createdAt?: string;
+  description?: string;
+  documentId?: string;
+  expectedSettlementDate?: string;
+  probability?: number;
+  penaltyRatePerDay?: number;
+}
 
 export function invalidateDashboardCache(): void {
-  memoryCachedData = null;
-  memoryCachedTimestamp = 0;
+  memoryCache.clear();
 }
 
 export interface MerchantSettings {
@@ -206,29 +247,13 @@ export const DEFAULT_ENABLED_FESTIVALS = [
 ];
 
 // In-memory fallback for settings if table is uninitialized
-let localSettingsStore: Record<string, MerchantSettings> = {
-  [tenantId]: {
-    tenantId,
-    businessName: 'My Business',
-    tradeName: '',
-    gstin: '',
-    pan: '',
-    category: 'Retail & Distribution',
-    businessSector: 'Retail & Distribution',
-    enabledFestivals: DEFAULT_ENABLED_FESTIVALS,
-    festivalMultipliers: {},
-    enableWeekendSurge: true,
-    minimumCashBuffer: 10000,
-    bufferRuleType: 'ABSOLUTE_INR',
-    defaultForecastHorizonDays: 60,
-    lowRunwayAlertDays: 14,
-  },
-};
+const localSettingsStore: Record<string, MerchantSettings> = {};
 
 /**
  * Fetch Merchant Settings from DynamoDB or in-memory fallback
  */
-export async function getMerchantSettings(targetTenantId = tenantId): Promise<MerchantSettings> {
+export async function getMerchantSettings(targetTenantId: string): Promise<MerchantSettings> {
+  if (!targetTenantId?.trim()) throw new Error('A request-scoped tenant is required.');
   try {
     const res = await docClient.send(
       new ScanCommand({
@@ -284,10 +309,8 @@ export async function getMerchantSettings(targetTenantId = tenantId): Promise<Me
 /**
  * Save Merchant Settings to DynamoDB
  */
-export async function saveMerchantSettings(
-  settings: Partial<MerchantSettings>,
-  targetTenantId = tenantId
-): Promise<MerchantSettings> {
+export async function saveMerchantSettings(settings: Partial<MerchantSettings>, targetTenantId: string): Promise<MerchantSettings> {
+  if (!targetTenantId?.trim()) throw new Error('A request-scoped tenant is required.');
   const current = await getMerchantSettings(targetTenantId);
   const updated: MerchantSettings = {
     ...current,
@@ -322,7 +345,8 @@ export async function saveMerchantSettings(
  * Reset all tenant financial data from DynamoDB tables.
  * Purges DocumentRecords, Transactions, Obligations, CashPositionSnapshots, etc.
  */
-export async function resetTenantData(targetTenantId = tenantId): Promise<{ deletedCount: number }> {
+export async function resetTenantData(targetTenantId: string): Promise<{ deletedCount: number }> {
+  if (!targetTenantId?.trim()) throw new Error('A request-scoped tenant is required.');
   let totalDeleted = 0;
 
   const tablesToClear = [
@@ -380,20 +404,23 @@ export async function resetTenantData(targetTenantId = tenantId): Promise<{ dele
  */
 export async function fetchDashboardData(options?: {
   forceRefresh?: boolean;
+  tenantId?: string;
 }): Promise<FinancialMetricData> {
+  const targetTenantId = options?.tenantId;
+  if (!targetTenantId?.trim()) throw new Error('A request-scoped tenant is required.');
   const now = Date.now();
+  const cached = memoryCache.get(targetTenantId);
 
   // 1. In-memory cache check
-  if (!options?.forceRefresh && memoryCachedData && now - memoryCachedTimestamp < MEMORY_CACHE_TTL_MS) {
-    return memoryCachedData;
+  if (!options?.forceRefresh && cached && now - cached.timestamp < MEMORY_CACHE_TTL_MS) {
+    return cached.data;
   }
 
   // 2. Compute fresh metrics directly from actual database items
-  console.log(`Computing fresh dynamic metrics for tenant: ${tenantId}...`);
-  const freshMetrics = await computeDashboardMetrics();
+  console.log(`Computing fresh dynamic metrics for tenant: ${targetTenantId}...`);
+  const freshMetrics = await computeDashboardMetrics(targetTenantId);
 
-  memoryCachedData = freshMetrics;
-  memoryCachedTimestamp = now;
+  memoryCache.set(targetTenantId, { data: freshMetrics, timestamp: now });
 
   return freshMetrics;
 }
@@ -403,16 +430,18 @@ export async function fetchDashboardData(options?: {
  * Ensures that whenever new bank statements or documents are ingested, or tenant data is deleted/reset,
  * the prediction pipeline is immediately restarted and fresh forecasts are ready in cache.
  */
-export async function restartPredictionAndRefreshMetrics(options?: {
+export async function restartPredictionAndRefreshMetrics(options: {
   reason?: string;
   sourceDocType?: string;
+  tenantId: string;
 }): Promise<FinancialMetricData> {
+  if (!options.tenantId?.trim()) throw new Error('A request-scoped tenant is required.');
   invalidateDashboardCache();
   const reasonStr = options?.reason || 'Lifecycle Trigger';
   const docTypeStr = options?.sourceDocType ? ` [DocType: ${options.sourceDocType}]` : '';
-  console.log(`[Prediction Lifecycle] Cache invalidated. Restarting cash flow prediction (${reasonStr}${docTypeStr}) for tenant: ${tenantId}...`);
+  console.log(`[Prediction Lifecycle] Cache invalidated. Restarting cash flow prediction (${reasonStr}${docTypeStr}) for tenant: ${options.tenantId}...`);
 
-  const freshMetrics = await fetchDashboardData({ forceRefresh: true });
+  const freshMetrics = await fetchDashboardData({ forceRefresh: true, tenantId: options.tenantId });
 
   console.log(
     `[Prediction Lifecycle] Prediction successfully restarted! Model: ${freshMetrics.mlForecast?.modelName || 'Chronos-Bolt Quantile Ensemble'}, Solvency: ${freshMetrics.solvencyStatus}, DaysToZero: ${freshMetrics.daysToZero}, Trajectory Points: ${freshMetrics.trajectory60Days?.length || 0}`
@@ -420,33 +449,33 @@ export async function restartPredictionAndRefreshMetrics(options?: {
   return freshMetrics;
 }
 
-export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
-  // Fetch merchant settings for business name & rules
+export async function computeDashboardMetrics(targetTenantId?: string): Promise<FinancialMetricData> {
+  if (!targetTenantId?.trim()) throw new Error('A request-scoped tenant is required.');
+  // Fetch merchant settings and catalogs for business name, rules, and forecasts.
   const [settings, taxProfile, taxRulesCatalog, marketEventsCatalog] = await Promise.all([
-    getMerchantSettings(tenantId),
-    getMerchantTaxProfile(tenantId),
+    getMerchantSettings(targetTenantId),
+    getMerchantTaxProfile(targetTenantId),
     getTaxComplianceRules(),
     getMarketCalendarEvents(),
   ]);
-
   const businessName = settings.businessName || 'My Business';
   const minimumCashBuffer = Number(settings.minimumCashBuffer ?? 0);
   const activeTaxRules = taxRulesCatalog.filter((r) =>
     taxProfile.selectedRuleCodes?.includes(r.ruleCode)
   );
 
-  let documents: any[] = [];
-  let transactions: any[] = [];
-  let obligations: any[] = [];
-  let cashSnapshots: any[] = [];
-  let recurringExpenses: any[] = [];
+  let documents: LedgerRecord[] = [];
+  let transactions: LedgerRecord[] = [];
+  let obligations: LedgerRecord[] = [];
+  let cashSnapshots: LedgerRecord[] = [];
+  let recurringExpenses: LedgerRecord[] = [];
 
   try {
     const docRes = await docClient.send(
       new ScanCommand({
         TableName: docTableName,
         FilterExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
+        ExpressionAttributeValues: { ':tid': targetTenantId },
       })
     );
     documents = docRes.Items || [];
@@ -459,7 +488,7 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
       new ScanCommand({
         TableName: txnTableName,
         FilterExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
+        ExpressionAttributeValues: { ':tid': targetTenantId },
       })
     );
     transactions = txnRes.Items || [];
@@ -472,7 +501,7 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
       new ScanCommand({
         TableName: obTableName,
         FilterExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
+        ExpressionAttributeValues: { ':tid': targetTenantId },
       })
     );
     obligations = obRes.Items || [];
@@ -485,7 +514,7 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
       new ScanCommand({
         TableName: cashPositionTableName,
         FilterExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
+        ExpressionAttributeValues: { ':tid': targetTenantId },
       })
     );
     cashSnapshots = cashRes.Items || [];
@@ -498,7 +527,7 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
       new ScanCommand({
         TableName: recurringExpenseTableName,
         FilterExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
+        ExpressionAttributeValues: { ':tid': targetTenantId },
       })
     );
     recurringExpenses = recRes.Items || [];
@@ -524,9 +553,9 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
   if (!foundAuthoritativeBalance && transactions.length > 0) {
     const validBalances = transactions.filter((t) => t.balanceAfterTransaction != null && t.date);
     if (validBalances.length > 0) {
-      validBalances.sort((a, b) => b.date.localeCompare(a.date));
+      validBalances.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       totalBalance = Number(validBalances[0].balanceAfterTransaction);
-      asOfDate = validBalances[0].date;
+      asOfDate = validBalances[0].date || asOfDate;
       foundAuthoritativeBalance = true;
     }
   }
@@ -536,11 +565,12 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
     for (const doc of documents) {
       if (doc.rawMetadata) {
         try {
-          const meta = typeof doc.rawMetadata === 'string' ? JSON.parse(doc.rawMetadata) : doc.rawMetadata;
+          const meta = (typeof doc.rawMetadata === 'string' ? JSON.parse(doc.rawMetadata) : doc.rawMetadata) as Record<string, unknown>;
+          const statementPeriod = meta.statementPeriod as Record<string, unknown> | undefined;
           if (meta.closingBalance && typeof meta.closingBalance === 'number') {
             totalBalance = meta.closingBalance;
-            if (meta.statementPeriod?.endDate) {
-              asOfDate = meta.statementPeriod.endDate;
+            if (typeof statementPeriod?.endDate === 'string') {
+              asOfDate = statementPeriod.endDate;
             }
             foundAuthoritativeBalance = true;
             break;
@@ -675,14 +705,18 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
     horizonDays: 60,
     asOfDate,
     minimumCashBuffer,
-    recurrentObligations: obligations.map((o) => ({
-      title: o.title || '',
-      dueDate: o.dueDate,
-      amount: Number(o.amount || 0),
-      type: o.type,
-      category: o.category,
-      isStatutory: o.isStatutory,
-    })),
+    recurrentObligations: obligations.flatMap((o) => {
+      const type = o.type === 'PAYABLE' || o.type === 'RECEIVABLE' ? o.type : undefined;
+      if (!type) return [];
+      return [{
+        title: o.title || '',
+        dueDate: o.dueDate,
+        amount: Number(o.amount || 0),
+        type,
+        category: o.category,
+        isStatutory: o.isStatutory,
+      }];
+    }),
     indianContextEnabled: true,
     enabledFestivals: settings.enabledFestivals,
     customMultipliers: settings.festivalMultipliers,
@@ -884,7 +918,7 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
   // Pinch-points generated ONLY from actual scheduled obligations
   const pinchPoints: FinancialMetricData['pinchPoints'] = [];
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const obligationsByDate: Record<string, any[]> = {};
+  const obligationsByDate: Record<string, LedgerRecord[]> = {};
 
   for (const obl of obligations) {
     if (obl.dueDate && obl.type === 'PAYABLE') {
@@ -1021,7 +1055,7 @@ export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
     const amt = Number(dp.amount || 0);
     const instantSavings = Math.round(amt * 0.02);
     discountArbitrage.push({
-      supplierName: dp.counterpartyName || dp.title,
+      supplierName: String(dp.counterpartyName || dp.title || 'Supplier'),
       billAmount: amt,
       discountPercent: 2,
       discountExpiryDays: 5,

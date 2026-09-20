@@ -15,7 +15,7 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
 
   // Adjust daysToZero based on simulation if active
   let effectiveDaysToZero = data.daysToZero;
-  let effectiveSpendable = Math.max(0, data.spendableLiquidity - simulatedExpense);
+  const effectiveSpendable = Math.max(0, data.spendableLiquidity - simulatedExpense);
   
   if (simulatedExpense > 0 || simulatedDelay > 0) {
     const impactDeduction = Math.floor(simulatedExpense / 5000) + Math.floor(simulatedDelay * 1.5);

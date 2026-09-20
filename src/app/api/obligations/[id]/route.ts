@@ -54,7 +54,10 @@ export async function PUT(
       );
     }
 
-    await restartPredictionAndRefreshMetrics({ reason: `Obligation Updated (${id})` });
+    await restartPredictionAndRefreshMetrics({
+      reason: `Obligation Updated (${id})`,
+      tenantId: updated.tenantId,
+    });
     return NextResponse.json({ obligation: updated });
   } catch (err: any) {
     console.error('Failed to update obligation:', err);
@@ -74,6 +77,13 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
+    const existing = await getObligation(id);
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Obligation not found' },
+        { status: 404 }
+      );
+    }
     const deleted = await deleteObligation(id);
 
     if (!deleted) {
@@ -83,7 +93,10 @@ export async function DELETE(
       );
     }
 
-    await restartPredictionAndRefreshMetrics({ reason: `Obligation Deleted (${id})` });
+    await restartPredictionAndRefreshMetrics({
+      reason: `Obligation Deleted (${id})`,
+      tenantId: existing.tenantId,
+    });
     return NextResponse.json({ success: true, predictionRestarted: true });
   } catch (err: any) {
     console.error('Failed to delete obligation:', err);

@@ -15,12 +15,13 @@ import {
   ShieldCheck,
   ArrowUpRight,
 } from 'lucide-react';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 import LanguageSelector from '@/components/ui/LanguageSelector';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import BrandLogo from '@/components/ui/BrandLogo';
 
 interface MerchantSettings {
-  tenantId: string;
+  tenantId?: string;
   businessName: string;
   tradeName?: string;
   gstin?: string;
@@ -35,7 +36,6 @@ interface MerchantSettings {
 export default function SettingsPage() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<MerchantSettings>({
-    tenantId: 'msme-001',
     businessName: '',
     tradeName: '',
     gstin: '',
@@ -60,12 +60,12 @@ export default function SettingsPage() {
   useEffect(() => {
     async function loadSettings() {
       try {
-        const res = await fetch('/api/dashboard/settings');
+        const res = await authenticatedFetch('/api/dashboard/settings');
         if (!res.ok) throw new Error('Failed to load settings');
         const data = await res.json();
         setSettings(data);
-      } catch (err: any) {
-        setErrorMessage(err.message || 'Error loading settings');
+      } catch (err: unknown) {
+        setErrorMessage(err instanceof Error ? err.message : 'Error loading settings');
       } finally {
         setLoading(false);
       }
@@ -80,7 +80,7 @@ export default function SettingsPage() {
     setErrorMessage(null);
 
     try {
-      const res = await fetch('/api/dashboard/settings', {
+      const res = await authenticatedFetch('/api/dashboard/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings),
@@ -91,8 +91,8 @@ export default function SettingsPage() {
       setSettings(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Error saving settings');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Error saving settings');
     } finally {
       setSaving(false);
     }
@@ -104,7 +104,7 @@ export default function SettingsPage() {
     setResetSuccessMessage(null);
 
     try {
-      const res = await fetch('/api/dashboard/settings', {
+      const res = await authenticatedFetch('/api/dashboard/settings', {
         method: 'DELETE',
       });
 
@@ -113,8 +113,8 @@ export default function SettingsPage() {
       setShowResetConfirm(false);
       setResetSuccessMessage(`Account data cleared successfully. (${result.deletedCount || 0} records purged)`);
       setTimeout(() => setResetSuccessMessage(null), 6000);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Error resetting data');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Error resetting data');
     } finally {
       setResetting(false);
     }

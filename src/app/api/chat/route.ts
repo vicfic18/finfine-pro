@@ -15,6 +15,8 @@ import {
   upstreamErrorStatus,
   type RuntimeConfigError,
 } from '@/lib/chat-runtime';
+import { AuthenticationConfigurationError, AuthenticationError } from '@/lib/server-auth';
+import { OnboardingRequiredError, requireCompletedOnboarding } from '@/lib/onboarding-store';
 
 function jsonResponse(
   body: ChatSuccessResponse | ChatErrorResponse,
@@ -74,11 +76,19 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.ok) {
     return errorResponse(parsed.requestId, 400, parsed.code, parsed.message);
   }
-  const { prompt, requestId, sessionId } = parsed.value;
+  const { prompt, requestId, sessionId, speechMode } = parsed.value;
 
   const authorization = bearerToken(request);
   if (!authorization) {
     return errorResponse(requestId, 401, 'unauthorized', 'A Bearer access token is required.');
+  }
+  try {
+    await requireCompletedOnboarding(request);
+  } catch (error) {
+    if (error instanceof AuthenticationConfigurationError) return errorResponse(requestId, 503, 'auth_unavailable', error.message);
+    if (error instanceof AuthenticationError) return errorResponse(requestId, 401, 'unauthorized', error.message);
+    if (error instanceof OnboardingRequiredError) return errorResponse(requestId, 403, error.code, error.message);
+    return errorResponse(requestId, 503, 'onboarding_unavailable', 'Onboarding status is unavailable.');
   }
 
   let endpoint: string;
@@ -115,6 +125,7 @@ export async function POST(request: Request): Promise<Response> {
         prompt,
         requestId,
         ...(sessionId === undefined ? {} : { sessionId }),
+        ...(speechMode === undefined ? {} : { speechMode }),
       }),
       signal,
       cache: 'no-store',
@@ -198,6 +209,14 @@ export async function POST(request: Request): Promise<Response> {
 
 export async function GET(request: Request): Promise<Response> {
   if (!bearerToken(request)) return errorResponse(null, 401, 'unauthorized', 'A Bearer access token is required.');
+  try {
+    await requireCompletedOnboarding(request);
+  } catch (error) {
+    if (error instanceof AuthenticationConfigurationError) return errorResponse(null, 503, 'auth_unavailable', error.message);
+    if (error instanceof AuthenticationError) return errorResponse(null, 401, 'unauthorized', error.message);
+    if (error instanceof OnboardingRequiredError) return errorResponse(null, 403, error.code, error.message);
+    return errorResponse(null, 503, 'onboarding_unavailable', 'Onboarding status is unavailable.');
+  }
   const result = await runtimeFetch(request, 'conversations', 'GET');
   if (!result.response) {
     if (result.error === 'config') return errorResponse(null, 503, 'runtime_unavailable', 'The agent runtime is not available.');

@@ -35,6 +35,7 @@ def test_create_agent_registers_financial_and_code_tools() -> None:
         model="fake-model",
         code_executor=FakeExecutor(),
         agent_factory=fake_agent_factory,
+        tenant_id="merchant-test",
     )
 
     assert result["model"] == "fake-model"
@@ -160,6 +161,7 @@ def test_trace_can_be_disabled() -> None:
         code_executor=FakeExecutor(),
         agent_factory=fake_agent_factory,
         trace=False,
+        tenant_id="merchant-test",
     )
 
     assert captured["callback_handler"] is None
@@ -173,7 +175,7 @@ def test_main_reports_agent_result(monkeypatch, agent_error) -> None:
             raise agent_error
         return "answer"
 
-    monkeypatch.setattr(sys, "argv", ["finfine-agent", "question", "--quiet"])
+    monkeypatch.setattr(sys, "argv", ["finfine-agent", "question", "--quiet", "--tenant-id", "merchant-test"])
     monkeypatch.setattr(
         agent_module.AgentSettings,
         "from_environment",

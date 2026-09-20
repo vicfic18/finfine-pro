@@ -10,6 +10,7 @@ Integrates:
 from __future__ import annotations
 
 import math
+import os
 from datetime import date, timedelta
 from typing import Any
 
@@ -18,11 +19,10 @@ from strands import tool
 from finfine_agent.config import Settings
 from finfine_agent.dynamodb import DynamoFinancialStore
 from finfine_agent.indian_calendar import INDIAN_FESTIVALS, get_date_context
-from finfine_agent.tools.financial_data import _plain_number, _service
 
 
-@tool(name="predict_cash_flow_sagemaker")
-def predict_cash_flow_sagemaker(
+def _run_cash_flow_forecast(
+    store: DynamoFinancialStore,
     horizon_days: int = 60,
     simulate_festive_drop_percent: float = 0.0,
     simulate_extra_expense_inr: float = 0.0,
@@ -43,9 +43,6 @@ def predict_cash_flow_sagemaker(
         simulate_extra_expense_inr: Immediate or planned expense in INR to test against buffer (e.g. 150000).
         simulate_debtor_delay_days: Number of days customer invoice settlements are delayed (e.g. 14).
     """
-    settings = Settings.from_environment()
-    store = DynamoFinancialStore(settings)
-
     # 1. Fetch current cash balance
     latest_cash = store.get_latest_cash_position()
     starting_balance = (
@@ -210,3 +207,49 @@ def predict_cash_flow_sagemaker(
             "debtor_delay_days": simulate_debtor_delay_days,
         },
     }
+
+
+@tool(name="predict_cash_flow_sagemaker")
+def predict_cash_flow_sagemaker(
+    horizon_days: int = 60,
+    simulate_festive_drop_percent: float = 0.0,
+    simulate_extra_expense_inr: float = 0.0,
+    simulate_debtor_delay_days: int = 0,
+) -> dict[str, Any]:
+    """Run the forecast for the tenant configured in the local environment."""
+    settings = Settings.from_environment()
+    tenant_id = os.getenv("FINFINE_TENANT_ID", "").strip()
+    if not tenant_id:
+        raise RuntimeError("FINFINE_TENANT_ID is required for the standalone forecast tool")
+    return _run_cash_flow_forecast(
+        DynamoFinancialStore(settings, tenant_id=tenant_id),
+        horizon_days=horizon_days,
+        simulate_festive_drop_percent=simulate_festive_drop_percent,
+        simulate_extra_expense_inr=simulate_extra_expense_inr,
+        simulate_debtor_delay_days=simulate_debtor_delay_days,
+    )
+
+
+def create_sagemaker_forecast_tool(tenant_id: str) -> Any:
+    """Build a forecast tool bound to the authenticated request tenant."""
+    normalized_tenant_id = tenant_id.strip()
+    if not normalized_tenant_id:
+        raise ValueError("tenant_id is required")
+
+    @tool(name="predict_cash_flow_sagemaker")
+    def scoped_predict_cash_flow_sagemaker(
+        horizon_days: int = 60,
+        simulate_festive_drop_percent: float = 0.0,
+        simulate_extra_expense_inr: float = 0.0,
+        simulate_debtor_delay_days: int = 0,
+    ) -> dict[str, Any]:
+        settings = Settings.from_environment()
+        return _run_cash_flow_forecast(
+            DynamoFinancialStore(settings, tenant_id=normalized_tenant_id),
+            horizon_days=horizon_days,
+            simulate_festive_drop_percent=simulate_festive_drop_percent,
+            simulate_extra_expense_inr=simulate_extra_expense_inr,
+            simulate_debtor_delay_days=simulate_debtor_delay_days,
+        )
+
+    return scoped_predict_cash_flow_sagemaker

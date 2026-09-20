@@ -4,12 +4,15 @@ import { data } from './data/resource';
 import { storage } from './storage/resource';
 import { documentExtractor } from './functions/document-extractor/resource';
 import { ingestionNormalizer } from './functions/ingestion-normalizer/resource';
+import { statutoryAdvisoryCron } from './functions/statutory-advisory-cron/resource';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as ecrAssets from 'aws-cdk-lib/aws-ecr-assets';
+import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Duration } from 'aws-cdk-lib';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -49,6 +52,7 @@ export const backend = defineBackend({
   storage,
   documentExtractor,
   ingestionNormalizer,
+  statutoryAdvisoryCron,
 });
 
 const agentSessionPrefix = 'agent-sessions/';
@@ -61,8 +65,7 @@ if (!Number.isInteger(agentSessionRetentionDays) || agentSessionRetentionDays < 
   throw new Error('FINFINE_AGENT_SESSION_RETENTION_DAYS must be a positive integer');
 }
 
-// Agent snapshots are written only by the server-side runtime. The Amplify
-// storage access rules expose public/*, so this prefix is not browser-accessible.
+// Agent snapshots are written only by the server-side runtime under a private prefix.
 backend.storage.resources.cfnResources.cfnBucket.lifecycleConfiguration = {
   rules: [
     {
@@ -89,18 +92,7 @@ const ingestionStack = backend.createStack('IngestionPipelineStack');
 // 1. Enable EventBridge notifications on S3 document storage bucket
 backend.storage.resources.bucket.enableEventBridgeNotification();
 
-// 2. Grant Bedrock permissions to documentExtractor Lambda
-backend.documentExtractor.resources.lambda.addToRolePolicy(
-  new iam.PolicyStatement({
-    actions: [
-      'bedrock:InvokeModel',
-      'bedrock:InvokeModelWithResponseStream',
-    ],
-    resources: ['*'],
-  })
-);
-
-// 3. Grant S3 read access to extractor
+// 2. Grant S3 read access to extractor
 backend.storage.resources.bucket.grantRead(backend.documentExtractor.resources.lambda);
 
 // 4. Grant DynamoDB table permissions & pass table names to normalizer Lambda
@@ -121,6 +113,15 @@ const inventorySnapshotTable = backend.data.resources.tables['InventorySnapshot'
 const inventoryItemTable = backend.data.resources.tables['InventoryItem'];
 const purchaseOrderTable = backend.data.resources.tables['PurchaseOrder'];
 const purchaseOrderLineItemTable = backend.data.resources.tables['PurchaseOrderLineItem'];
+const onboardingTable = backend.data.resources.tables['MerchantOnboarding'];
+const fieldConfirmationTable = backend.data.resources.tables['MerchantFieldConfirmation'];
+const expectedReceivableTable = backend.data.resources.tables['ExpectedReceivable'];
+
+// The upload manifest is authoritative for tenant, purpose, and category. The
+// EventBridge S3 event carries the bucket/key but not the application metadata.
+const extractorLambda = backend.documentExtractor.resources.lambda as lambda.Function;
+docTable.grantReadData(extractorLambda);
+extractorLambda.addEnvironment('DOCUMENT_RECORD_TABLE_NAME', docTable.tableName);
 
 const normalizerTables = [
   docTable,
@@ -136,6 +137,13 @@ const normalizerTables = [
   supplierTermsTable,
   settingsTable,
   recurringTable,
+  inventorySnapshotTable,
+  inventoryItemTable,
+  purchaseOrderTable,
+  purchaseOrderLineItemTable,
+  onboardingTable,
+  fieldConfirmationTable,
+  expectedReceivableTable,
 ];
 
 const agentTables = [
@@ -164,6 +172,13 @@ normalizerLambda.addEnvironment('SUPPLIER_PROFILE_TABLE_NAME', supplierTable.tab
 normalizerLambda.addEnvironment('SUPPLIER_PRODUCT_TERMS_TABLE_NAME', supplierTermsTable.tableName);
 normalizerLambda.addEnvironment('MERCHANT_SETTINGS_TABLE_NAME', settingsTable.tableName);
 normalizerLambda.addEnvironment('RECURRING_EXPENSE_TABLE_NAME', recurringTable.tableName);
+normalizerLambda.addEnvironment('INVENTORY_SNAPSHOT_TABLE_NAME', inventorySnapshotTable.tableName);
+normalizerLambda.addEnvironment('INVENTORY_ITEM_TABLE_NAME', inventoryItemTable.tableName);
+normalizerLambda.addEnvironment('PURCHASE_ORDER_TABLE_NAME', purchaseOrderTable.tableName);
+normalizerLambda.addEnvironment('PURCHASE_ORDER_LINE_ITEM_TABLE_NAME', purchaseOrderLineItemTable.tableName);
+normalizerLambda.addEnvironment('MERCHANT_ONBOARDING_TABLE_NAME', onboardingTable.tableName);
+normalizerLambda.addEnvironment('MERCHANT_FIELD_CONFIRMATION_TABLE_NAME', fieldConfirmationTable.tableName);
+normalizerLambda.addEnvironment('EXPECTED_RECEIVABLE_TABLE_NAME', expectedReceivableTable.tableName);
 
 // 5. Build Step Functions State Machine
 const extractTask = new tasks.LambdaInvoke(ingestionStack, 'ExtractDocumentDataTask', {
@@ -175,7 +190,6 @@ const extractTask = new tasks.LambdaInvoke(ingestionStack, 'ExtractDocumentDataT
 
 extractTask.addRetry({
   errors: [
-    'BedrockThrottlingException',
     'Lambda.ServiceException',
     'Lambda.AWSLambdaException',
     'Lambda.SdkClientException',
@@ -225,7 +239,7 @@ const s3UploadRule = new events.Rule(ingestionStack, 'S3DocumentUploadRule', {
         name: [backend.storage.resources.bucket.bucketName],
       },
       object: {
-        key: [{ prefix: 'public/' }, { prefix: 'tenants/' }, { prefix: 'uploads/' }],
+        key: [{ prefix: 'tenants/' }],
       },
     },
   },
@@ -235,12 +249,36 @@ s3UploadRule.addTarget(new targets.SfnStateMachine(ingestionStateMachine));
 
 // 7. Scale-to-Zero Serverless Agent Backend Stack
 const agentStack = backend.createStack('AgentBackendStack');
+const allowedOrigins = (process.env.FINFINE_ALLOWED_ORIGINS || 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const voiceTranscriberLambda = new nodejs.NodejsFunction(agentStack, 'FinFineVoiceTranscriberFunction', {
+  entry: path.join(__dirname, 'functions/voice-transcriber/handler.ts'),
+  handler: 'handler',
+  runtime: lambda.Runtime.NODEJS_22_X,
+  memorySize: 512,
+  timeout: Duration.seconds(60),
+  environment: {
+    VOICE_AWS_REGION: process.env.VOICE_AWS_REGION || 'ap-south-1',
+  },
+});
+
+voiceTranscriberLambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['transcribe:StartStreamTranscription'],
+  resources: ['*'],
+}));
 
 const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBackendFunction', {
+  // Keep the Lambda architecture and Docker asset platform aligned when
+  // synthesizing from an Apple Silicon development machine.
+  architecture: lambda.Architecture.X86_64,
   code: lambda.DockerImageCode.fromImageAsset(
     path.join(__dirname, '..'),
     {
       file: 'agent_backend/Dockerfile',
+      platform: ecrAssets.Platform.LINUX_AMD64,
       exclude: [
         'node_modules',
         '.next',
@@ -256,7 +294,6 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
   memorySize: 1024,
   timeout: Duration.seconds(180),
   environment: {
-    FINFINE_TENANT_ID: 'msme-001',
     DOCUMENT_RECORD_TABLE_NAME: docTable.tableName,
     TRANSACTION_TABLE_NAME: txnTable.tableName,
     OBLIGATION_TABLE_NAME: oblTable.tableName,
@@ -274,6 +311,9 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
     INVENTORY_ITEM_TABLE_NAME: inventoryItemTable.tableName,
     PURCHASE_ORDER_TABLE_NAME: purchaseOrderTable.tableName,
     PURCHASE_ORDER_LINE_ITEM_TABLE_NAME: purchaseOrderLineItemTable.tableName,
+    MERCHANT_ONBOARDING_TABLE_NAME: onboardingTable.tableName,
+    MERCHANT_FIELD_CONFIRMATION_TABLE_NAME: fieldConfirmationTable.tableName,
+    EXPECTED_RECEIVABLE_TABLE_NAME: expectedReceivableTable.tableName,
     CODE_EXECUTOR_FUNCTION_NAME: 'finfine-code-executor',
     CODE_EXECUTOR_REGION: agentStack.region,
     MODEL_BASE_URL: process.env.MODEL_BASE_URL || 'https://api.groq.com/openai/v1',
@@ -281,13 +321,22 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY || process.env.MODEL_API_KEY || '',
     GROQ_API_KEY: process.env.GROQ_API_KEY || '',
     MODEL_API_KEY: process.env.MODEL_API_KEY || process.env.GROQ_API_KEY || '',
-    FINFINE_ALLOWED_ORIGINS: '*',
+    FINFINE_ALLOWED_ORIGINS: allowedOrigins.join(','),
     COGNITO_USER_POOL_ID: backend.auth.resources.userPool.userPoolId,
     COGNITO_CLIENT_ID: backend.auth.resources.userPoolClient.userPoolClientId,
     AGENT_SESSION_BUCKET_NAME: backend.storage.resources.bucket.bucketName,
     AGENT_SESSION_PREFIX: agentSessionPrefix,
     AGENT_SESSION_RETENTION_DAYS: agentSessionRetentionDays.toString(),
     AGENT_SESSION_REGION: agentStack.region,
+    VOICE_AWS_REGION: process.env.VOICE_AWS_REGION || 'ap-south-1',
+    VOICE_TRANSCRIBER_MODE: 'lambda',
+    VOICE_TRANSCRIBER_REGION: agentStack.region,
+    VOICE_TRANSCRIBER_FUNCTION_NAME: voiceTranscriberLambda.functionName,
+    POLLY_VOICE_ID: process.env.POLLY_VOICE_ID || 'Kajal',
+    POLLY_ENGINE: process.env.POLLY_ENGINE || 'neural',
+    POLLY_OUTPUT_FORMAT: process.env.POLLY_OUTPUT_FORMAT || 'mp3',
+    VOICE_MAX_DURATION_SECONDS: process.env.VOICE_MAX_DURATION_SECONDS || '30',
+    VOICE_MAX_AUDIO_BYTES: process.env.VOICE_MAX_AUDIO_BYTES || '1048576',
   },
 });
 
@@ -296,8 +345,27 @@ for (const tbl of agentTables) {
   tbl.grantReadData(agentLambda);
 }
 
-// Grant read/write permissions on storage bucket for durable chat sessions
-backend.storage.resources.bucket.grantReadWrite(agentLambda);
+// Grant the agent access only to its durable session prefix. Document uploads
+// are handled by the authenticated ingestion path and are never visible here.
+agentLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['s3:GetObject', 's3:PutObject', 's3:DeleteObject'],
+    resources: [`${backend.storage.resources.bucket.bucketArn}/${agentSessionPrefix}*`],
+  }),
+);
+agentLambda.addToRolePolicy(
+  new iam.PolicyStatement({
+    actions: ['s3:ListBucket'],
+    resources: [backend.storage.resources.bucket.bucketArn],
+    conditions: { StringLike: { 's3:prefix': [`${agentSessionPrefix}*`] } },
+  }),
+);
+
+voiceTranscriberLambda.grantInvoke(agentLambda);
+agentLambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['polly:SynthesizeSpeech', 'polly:DescribeVoices'],
+  resources: ['*'],
+}));
 
 // Grant invoke permissions on finfine-code-executor
 agentLambda.addToRolePolicy(
@@ -312,7 +380,7 @@ const agentFunctionUrl = agentLambda.addFunctionUrl({
   authType: lambda.FunctionUrlAuthType.NONE,
   invokeMode: lambda.InvokeMode.BUFFERED,
   cors: {
-    allowedOrigins: ['*'],
+    allowedOrigins,
     allowedMethods: [lambda.HttpMethod.ALL],
     allowedHeaders: ['*'],
   },
@@ -326,6 +394,7 @@ backend.addOutput({
     ingestionNormalizerLambdaArn: backend.ingestionNormalizer.resources.lambda.functionArn,
     agentApiUrl: agentFunctionUrl.url,
     agentFunctionArn: agentLambda.functionArn,
+    voiceTranscriberFunctionName: voiceTranscriberLambda.functionName,
     documentRecordTableName: docTable.tableName,
     transactionTableName: txnTable.tableName,
     obligationTableName: oblTable.tableName,
@@ -339,6 +408,9 @@ backend.addOutput({
     supplierProductTermsTableName: supplierTermsTable.tableName,
     merchantSettingsTableName: settingsTable.tableName,
     recurringExpenseTableName: recurringTable.tableName,
+    merchantOnboardingTableName: onboardingTable.tableName,
+    merchantFieldConfirmationTableName: fieldConfirmationTable.tableName,
+    expectedReceivableTableName: expectedReceivableTable.tableName,
     inventorySnapshotTableName: inventorySnapshotTable.tableName,
     inventoryItemTableName: inventoryItemTable.tableName,
     purchaseOrderTableName: purchaseOrderTable.tableName,
@@ -346,5 +418,7 @@ backend.addOutput({
     agentSessionBucketName: backend.storage.resources.bucket.bucketName,
     agentSessionPrefix,
     agentSessionRetentionDays,
+    statutoryAdvisoryCronLambdaArn: backend.statutoryAdvisoryCron.resources.lambda.functionArn,
+    statutoryAdvisoryTableName: 'StatutoryAdvisory-ifsueqzwybf6nau7duulv5qweq-NONE',
   },
 });

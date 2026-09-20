@@ -19,9 +19,9 @@ from uuid import UUID, uuid4
 import boto3
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from strands.session import SnapshotSessionManager
 from strands.storage import S3Storage
@@ -32,7 +32,7 @@ from finfine_agent.auth import (
     AuthenticationError,
     CognitoAccessTokenValidator,
 )
-from finfine_agent.config import AgentSettings, RuntimeSettings
+from finfine_agent.config import AgentSettings, RuntimeSettings, VoiceSettings
 from finfine_agent.sessions import (
     CompletedResult,
     Conversation,
@@ -45,7 +45,15 @@ from finfine_agent.sessions import (
     SessionUnavailableError,
     VisibleMessage,
 )
+from finfine_agent.speech_modes import VoiceMode
 from finfine_agent.streaming import stream_agent
+from finfine_agent.voice import (
+    VoiceConfigurationError,
+    VoiceError,
+    synthesize_speech,
+    transcribe_audio,
+    validate_polly_configuration,
+)
 
 LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_LEVEL = getattr(logging, LOG_LEVEL_NAME, logging.INFO)
@@ -68,6 +76,14 @@ class RuntimeInvocation(BaseModel):
     prompt: Question
     request_id: UUID = Field(alias="requestId")
     session_id: UUID | None = Field(default=None, alias="sessionId")
+    speech_mode: VoiceMode | None = Field(default=None, alias="speechMode")
+
+
+class VoiceSynthesisRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+    session_id: UUID = Field(alias="sessionId")
+    request_id: UUID = Field(alias="requestId")
+    mode: VoiceMode
 
 
 class AgentAnswer(BaseModel):
@@ -136,7 +152,10 @@ class RuntimeService:
 
     async def invoke(self, request: RuntimeInvocation, principal: AuthenticatedPrincipal, answerer: Answerer, http_request: Request | None = None) -> AgentAnswer:
         record = self.registry.resolve(subject=principal.subject, public_id=request.session_id)
-        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
+        hash_material = request.prompt.encode()
+        if request.speech_mode is not None:
+            hash_material += b"\0speechMode=" + request.speech_mode.value.encode()
+        prompt_hash = hashlib.sha256(hash_material).hexdigest()
         request_id = str(request.request_id)
         existing = self.registry.get_completed(request_id=request_id, subject=principal.subject, session_id=record.public_id, prompt_hash=prompt_hash)
         if existing is not None:
@@ -147,7 +166,15 @@ class RuntimeService:
             if existing is not None:
                 await self._record_turn(principal.subject, record, request_id, request.prompt, existing.answer)
                 return AgentAnswer(requestId=request.request_id, sessionId=UUID(existing.session_id), answer=existing.answer)
-            answer = await self._call_answerer(answerer, request.prompt, record=record, request_id=request_id, http_request=http_request)
+            answer = await self._call_answerer(
+                answerer,
+                request.prompt,
+                record=record,
+                subject=principal.subject,
+                request_id=request_id,
+                http_request=http_request,
+                speech_mode=request.speech_mode,
+            )
             completed = self.registry.put_completed(CompletedResult(request_id, record.public_id, prompt_hash, answer), subject=principal.subject)
             self.registry.touch(record)
             await self._record_turn(principal.subject, record, request_id, request.prompt, completed.answer)
@@ -162,7 +189,10 @@ class RuntimeService:
     ) -> AsyncIterator[dict[str, Any]]:
         """Run one invocation and expose only the approved public event schema."""
         record = self.registry.resolve(subject=principal.subject, public_id=request.session_id)
-        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
+        hash_material = request.prompt.encode()
+        if request.speech_mode is not None:
+            hash_material += b"\0speechMode=" + request.speech_mode.value.encode()
+        prompt_hash = hashlib.sha256(hash_material).hexdigest()
         request_id = str(request.request_id)
         existing = self.registry.get_completed(
             request_id=request_id,
@@ -193,8 +223,10 @@ class RuntimeService:
                 streamer,
                 request.prompt,
                 record=record,
+                subject=principal.subject,
                 request_id=request_id,
                 http_request=http_request,
+                speech_mode=request.speech_mode,
             ):
                 if event.get("type") == "answer":
                     answer = str(event.get("answer", ""))
@@ -236,7 +268,17 @@ class RuntimeService:
                 answer=answer,
             )
 
-    async def _call_answerer(self, answerer: Answerer, question: str, *, record: SessionRecord, request_id: str, http_request: Request | None) -> str:
+    async def _call_answerer(
+        self,
+        answerer: Answerer,
+        question: str,
+        *,
+        record: SessionRecord,
+        subject: str,
+        request_id: str,
+        http_request: Request | None,
+        speech_mode: VoiceMode | None,
+    ) -> str:
         kwargs: dict[str, Any] = {}
         try:
             parameters = inspect.signature(answerer).parameters
@@ -248,21 +290,43 @@ class RuntimeService:
             kwargs["request_id"] = request_id
         if "runtime_settings" in parameters:
             kwargs["runtime_settings"] = self.settings
+        if "tenant_id" in parameters:
+            kwargs["tenant_id"] = subject
         if "http_request" in parameters:
             kwargs["http_request"] = http_request
+        if "speech_mode" in parameters:
+            kwargs["speech_mode"] = speech_mode
         result = answerer(question, **kwargs)
         if inspect.isawaitable(result):
             return str(await result)
         return str(result)
 
-    async def _call_streamer(self, streamer: EventStreamer, question: str, *, record: SessionRecord, request_id: str, http_request: Request | None) -> AsyncIterator[dict[str, Any]]:
-        async for event in streamer(
-            question,
-            session_record=record,
-            request_id=request_id,
-            runtime_settings=self.settings,
-            http_request=http_request,
-        ):
+    async def _call_streamer(
+        self,
+        streamer: EventStreamer,
+        question: str,
+        *,
+        record: SessionRecord,
+        subject: str,
+        request_id: str,
+        http_request: Request | None,
+        speech_mode: VoiceMode | None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        kwargs: dict[str, Any] = {
+            "session_record": record,
+            "request_id": request_id,
+            "runtime_settings": self.settings,
+            "http_request": http_request,
+        }
+        try:
+            parameters = inspect.signature(streamer).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "tenant_id" in parameters:
+            kwargs["tenant_id"] = subject
+        if "speech_mode" in parameters:
+            kwargs["speech_mode"] = speech_mode
+        async for event in streamer(question, **kwargs):
             yield event
 
 
@@ -272,7 +336,16 @@ def get_runtime_service(settings: RuntimeSettings) -> RuntimeService:
     return RuntimeService(settings)
 
 
-async def run_agent_question(question: str, *, session_record: SessionRecord, request_id: str, runtime_settings: RuntimeSettings, http_request: Request | None = None) -> str:
+async def run_agent_question(
+    question: str,
+    *,
+    session_record: SessionRecord,
+    tenant_id: str,
+    request_id: str,
+    runtime_settings: RuntimeSettings,
+    http_request: Request | None = None,
+    speech_mode: VoiceMode | None = None,
+) -> str:
     """Build a fresh agent for this request and persist through Strands S3 storage."""
     agent_settings = AgentSettings.from_environment()
     boto_session = boto3.Session(profile_name=runtime_settings.aws_profile, region_name=runtime_settings.session_region)
@@ -286,8 +359,14 @@ async def run_agent_question(question: str, *, session_record: SessionRecord, re
         boto_session=boto_session,
     )
     manager = SnapshotSessionManager(session_record.storage_id, storage=storage)
-    trace = os.getenv("AGENT_TRACE", "true").lower() in ("true", "1", "yes")
-    agent = create_agent(agent_settings, session_manager=manager, trace=trace)
+    trace = os.getenv("AGENT_TRACE", "true").lower() in ("true", "1", "yes") and speech_mode is None
+    agent = create_agent(
+        agent_settings,
+        session_manager=manager,
+        trace=trace,
+        tenant_id=tenant_id,
+        speech_mode=speech_mode,
+    )
     cancel_signal = Event()
     disconnect_task: asyncio.Task[None] | None = None
     if http_request is not None:
@@ -302,7 +381,16 @@ async def run_agent_question(question: str, *, session_record: SessionRecord, re
             cleanup()
 
 
-async def stream_agent_question(question: str, *, session_record: SessionRecord, request_id: str, runtime_settings: RuntimeSettings, http_request: Request | None = None) -> AsyncIterator[dict[str, Any]]:
+async def stream_agent_question(
+    question: str,
+    *,
+    session_record: SessionRecord,
+    tenant_id: str,
+    request_id: str,
+    runtime_settings: RuntimeSettings,
+    http_request: Request | None = None,
+    speech_mode: VoiceMode | None = None,
+) -> AsyncIterator[dict[str, Any]]:
     """Build a fresh agent and publish its safe streaming projection."""
     agent_settings = AgentSettings.from_environment()
     boto_session = boto3.Session(profile_name=runtime_settings.aws_profile, region_name=runtime_settings.session_region)
@@ -312,8 +400,14 @@ async def stream_agent_question(question: str, *, session_record: SessionRecord,
         boto_session=boto_session,
     )
     manager = SnapshotSessionManager(session_record.storage_id, storage=storage)
-    trace = os.getenv("AGENT_TRACE", "true").lower() in ("true", "1", "yes")
-    agent = create_agent(agent_settings, session_manager=manager, trace=trace)
+    trace = os.getenv("AGENT_TRACE", "true").lower() in ("true", "1", "yes") and speech_mode is None
+    agent = create_agent(
+        agent_settings,
+        session_manager=manager,
+        trace=trace,
+        tenant_id=tenant_id,
+        speech_mode=speech_mode,
+    )
     cancel_signal = Event()
     disconnect_task: asyncio.Task[None] | None = None
     if http_request is not None:
@@ -352,6 +446,8 @@ def _error_response(*, code: str, message: str, status_code: int, request_id: UU
 
 
 def _public_error(exc: Exception) -> tuple[str, str, int]:
+    if isinstance(exc, VoiceError):
+        return exc.code, exc.message, exc.status_code
     if isinstance(exc, AuthenticationError):
         return "AUTHENTICATION_REQUIRED", "Authentication is required.", 401
     if isinstance(exc, SessionUnavailableError):
@@ -397,6 +493,16 @@ async def get_current_principal(request: Request, validator: Annotated[CognitoAc
     return validator.validate(token.strip())
 
 
+def get_voice_settings() -> VoiceSettings:
+    try:
+        settings = VoiceSettings.from_environment()
+        validate_polly_configuration(settings)
+        return settings
+    except (RuntimeError, ValueError) as exc:
+        logger.error("voice_configuration_invalid error_type=%s", type(exc).__name__)
+        raise VoiceConfigurationError("The voice service is not configured correctly. Contact support.") from exc
+
+
 async def get_answerer() -> Answerer:
     return run_agent_question
 
@@ -404,6 +510,15 @@ async def get_answerer() -> Answerer:
 @app.exception_handler(AuthenticationError)
 async def authentication_error_handler(_request: Request, _exc: AuthenticationError) -> JSONResponse:
     return _error_response(code="AUTHENTICATION_REQUIRED", message="Authentication is required.", status_code=401)
+
+
+@app.exception_handler(VoiceError)
+async def voice_error_handler(_request: Request, exc: VoiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"status": "error", "code": exc.code, "message": exc.message},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -416,9 +531,63 @@ async def runtime_health() -> RuntimeHealthResponse:
     return RuntimeHealthResponse()
 
 
+@app.post("/invocations/voice/transcribe")
+async def transcribe_runtime(
+    audio: Annotated[UploadFile, File()],
+    mode: Annotated[VoiceMode, Form()],
+    _principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    voice_settings: Annotated[VoiceSettings, Depends(get_voice_settings)],
+) -> dict[str, Any]:
+    content_type = (audio.content_type or "").split(";", 1)[0].strip().lower()
+    if content_type not in {"audio/wav", "audio/x-wav", "audio/wave"}:
+        await audio.close()
+        raise VoiceError("UNSUPPORTED_MEDIA_TYPE", "The recording must be a WAV audio file.", 415)
+    try:
+        content = await audio.read(voice_settings.max_audio_bytes + 1)
+    finally:
+        await audio.close()
+    if len(content) > voice_settings.max_audio_bytes:
+        raise VoiceError("AUDIO_TOO_LARGE", "The recording is larger than the 1 MB limit.", 413)
+    transcript, languages = await transcribe_audio(content, mode, voice_settings)
+    return {"status": "success", "transcript": transcript, "detectedLanguages": languages}
+
+
+@app.post("/invocations/voice/synthesize", response_model=None)
+async def synthesize_runtime(
+    request: VoiceSynthesisRequest,
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)],
+    voice_settings: Annotated[VoiceSettings, Depends(get_voice_settings)],
+) -> Response:
+    try:
+        conversation = await get_runtime_service(runtime_settings).get_conversation(principal, request.session_id)
+        completed_answer = next(
+            (
+                message.content
+                for message in reversed(conversation.messages)
+                if message.role == "assistant" and message.request_id == str(request.request_id)
+            ),
+            None,
+        )
+        if completed_answer is None:
+            raise VoiceError("ANSWER_NOT_FOUND", "The completed answer is not available for speech.", 404)
+        audio_bytes = await synthesize_speech(completed_answer, request.mode, voice_settings)
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+    except VoiceError:
+        raise
+    except Exception as exc:
+        code, message, status_code = _public_error(exc)
+        return _error_response(code=code, message=message, status_code=status_code, request_id=request.request_id)
+
+
 @app.post("/invocations", response_model=AgentAnswer)
 async def invoke_runtime(request: RuntimeInvocation, principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)], answerer: Annotated[Answerer, Depends(get_answerer)], runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)], http_request: Request) -> AgentAnswer | JSONResponse:
-    logger.info("POST /invocations [requestId=%s sessionId=%s]: %s", request.request_id, request.session_id, request.prompt)
+    safe_prompt = "[speech-mode prompt withheld]" if request.speech_mode is not None else request.prompt
+    logger.info("POST /invocations [requestId=%s sessionId=%s]: %s", request.request_id, request.session_id, safe_prompt)
     try:
         res = await get_runtime_service(runtime_settings).invoke(request, principal, answerer, http_request)
         logger.info("POST /invocations completed [requestId=%s]", request.request_id)
@@ -440,7 +609,8 @@ async def stream_runtime(
     runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)],
     http_request: Request,
 ) -> StreamingResponse:
-    logger.info("POST /invocations/stream [requestId=%s sessionId=%s]: %s", request.request_id, request.session_id, request.prompt)
+    safe_prompt = "[speech-mode prompt withheld]" if request.speech_mode is not None else request.prompt
+    logger.info("POST /invocations/stream [requestId=%s sessionId=%s]: %s", request.request_id, request.session_id, safe_prompt)
     async def public_events() -> AsyncIterator[bytes]:
         try:
             async for event in get_runtime_service(runtime_settings).invoke_stream(

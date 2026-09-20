@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -776,7 +777,77 @@ class FinancialDataService:
 @lru_cache(maxsize=1)
 def _service() -> FinancialDataService:
     settings = Settings.from_environment()
-    return FinancialDataService(DynamoFinancialStore(settings))
+    tenant_id = os.getenv("FINFINE_TENANT_ID", "").strip()
+    if not tenant_id:
+        raise RuntimeError("FINFINE_TENANT_ID is required for unscoped local tools")
+    return FinancialDataService(DynamoFinancialStore(settings, tenant_id=tenant_id))
+
+
+def create_financial_data_tools(
+    tenant_id: str,
+    artifacts: LocalArtifactStore | None = None,
+) -> list[Any]:
+    """Build every financial tool bound to the authenticated request tenant."""
+    if not tenant_id or not tenant_id.strip():
+        raise ValueError("tenant_id is required")
+    settings = Settings.from_environment()
+    service = FinancialDataService(
+        DynamoFinancialStore(settings, tenant_id=tenant_id),
+    )
+    artifact_store = artifacts or LocalArtifactStore()
+
+    @tool(name="get_latest_balance")
+    def scoped_latest_balance() -> dict[str, Any]:
+        return service.latest_balance()
+
+    @tool(name="get_transactions")
+    def scoped_transactions(
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return service.transactions(start_date, end_date, limit)
+
+    @tool(name="get_upcoming_obligations")
+    def scoped_upcoming_obligations(
+        days_ahead: int = 30,
+        obligation_type: str = "ALL",
+        as_of_date: str | None = None,
+    ) -> dict[str, Any]:
+        return service.upcoming_obligations(days_ahead, obligation_type, as_of_date)
+
+    @tool(name="get_business_data")
+    def scoped_business_data(
+        dataset: DatasetName,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        product_id: str | None = None,
+        supplier_id: str | None = None,
+        parent_id: str | None = None,
+        status: str | None = None,
+        active_only: bool | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return service.business_data(
+            dataset=dataset,
+            start_date=start_date,
+            end_date=end_date,
+            product_id=product_id,
+            supplier_id=supplier_id,
+            parent_id=parent_id,
+            status=status,
+            active_only=active_only,
+            limit=limit,
+        )
+
+    return [
+        scoped_latest_balance,
+        scoped_transactions,
+        scoped_upcoming_obligations,
+        scoped_business_data,
+        create_transactions_csv_tool(artifact_store, service=service),
+        create_business_data_csv_tool(artifact_store, service=service),
+    ]
 
 
 @tool
@@ -876,7 +947,10 @@ def get_upcoming_obligations(
     )
 
 
-def create_transactions_csv_tool(artifacts: LocalArtifactStore) -> Any:
+def create_transactions_csv_tool(
+    artifacts: LocalArtifactStore,
+    service: FinancialDataService | None = None,
+) -> Any:
     """Create the transaction CSV export tool for one agent process."""
 
     @tool(name="export_transactions_csv")
@@ -898,7 +972,8 @@ def create_transactions_csv_tool(artifacts: LocalArtifactStore) -> Any:
             end_date: Latest transaction date in YYYY-MM-DD format.
             limit: Maximum rows to export, from 1 to 2000.
         """
-        columns, rows = _service().transactions_csv(start_date, end_date, limit)
+        active_service = service or _service()
+        columns, rows = active_service.transactions_csv(start_date, end_date, limit)
         output = StringIO(newline="")
         writer = csv.DictWriter(output, fieldnames=columns)
         writer.writeheader()
@@ -920,7 +995,10 @@ def create_transactions_csv_tool(artifacts: LocalArtifactStore) -> Any:
     return export_transactions_csv
 
 
-def create_business_data_csv_tool(artifacts: LocalArtifactStore) -> Any:
+def create_business_data_csv_tool(
+    artifacts: LocalArtifactStore,
+    service: FinancialDataService | None = None,
+) -> Any:
     """Create a CSV export tool for one validated canonical dataset."""
 
     @tool(name="export_business_data_csv")
@@ -952,7 +1030,8 @@ def create_business_data_csv_tool(artifacts: LocalArtifactStore) -> Any:
             active_only: Whether to return only active products or recurring expenses.
             limit: Maximum rows to export, from 1 to 200. Singleton settings ignore it.
         """
-        result = _service().business_data_csv(
+        active_service = service or _service()
+        result = active_service.business_data_csv(
             dataset=dataset,
             start_date=start_date,
             end_date=end_date,

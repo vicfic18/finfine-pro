@@ -1,10 +1,14 @@
-import { NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DeleteCommand, DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { NextResponse } from 'next/server';
+import { AuthenticationConfigurationError, AuthenticationError, requirePrincipal } from '@/lib/server-auth';
+import { requireCompletedOnboarding } from '@/lib/onboarding-store';
 import {
-  invalidateDashboardCache,
   getMerchantSettings,
   restartPredictionAndRefreshMetrics,
 } from '@/lib/financial-store';
@@ -13,29 +17,53 @@ import {
   SAMPLE_DOCUMENTS_REGISTRY,
 } from '../../../../../scripts/generate-sample-data';
 
-const region = process.env.AWS_REGION || 'ap-south-1';
-const bucketName =
-  process.env.S3_BUCKET_NAME || 'amplify-finfinepro-vicfic-finfinedocumentstoragebu-nm3ks1cueqmt';
-const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
+export const runtime = 'nodejs';
 
-// Load deployed Lambda & Table ARNs from amplify_outputs.json if available
-let outputsCustom: Record<string, any> = {};
-try {
-  const outputsPath = path.join(process.cwd(), 'amplify_outputs.json');
-  if (fs.existsSync(outputsPath)) {
-    const outputs = JSON.parse(fs.readFileSync(outputsPath, 'utf8'));
-    outputsCustom = outputs.custom || {};
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+const PDF_SIGNATURE = '%PDF-';
+const ALLOWED_CATEGORIES = new Set([
+  'BANK_ACTIVITY',
+  'PRODUCT_SALES',
+  'CURRENT_INVENTORY',
+  'PURCHASES_SUPPLIERS',
+  'PURCHASES',
+  'OPEN_OBLIGATIONS',
+  'RECURRING_EXPENSES',
+]);
+const ALLOWED_PURPOSES = new Set([
+  'ONBOARDING_BASELINE',
+  'PERIODIC_UPDATE',
+]);
+
+type Outputs = {
+  auth?: { aws_region?: string };
+  data?: { aws_region?: string };
+  custom?: Record<string, string>;
+  storage?: { bucket_name?: string };
+};
+
+function loadOutputs(): Outputs {
+  try {
+    const file = path.join(process.cwd(), 'amplify_outputs.json');
+    return fs.existsSync(file) ? (JSON.parse(fs.readFileSync(file, 'utf8')) as Outputs) : {};
+  } catch {
+    return {};
   }
-} catch (e) {
-  // Non-fatal
 }
 
-const extractorArn =
-  process.env.DOCUMENT_EXTRACTOR_FUNCTION_ARN || outputsCustom.documentExtractorLambdaArn;
-const normalizerArn =
-  process.env.INGESTION_NORMALIZER_FUNCTION_ARN || outputsCustom.ingestionNormalizerLambdaArn;
+const outputs = loadOutputs();
+const outputsCustom = outputs.custom || {};
+const region = process.env.AWS_REGION
+  || outputs.data?.aws_region
+  || outputs.auth?.aws_region
+  || outputsCustom.awsRegion
+  || 'ap-south-1';
 
-// Canonical DynamoDB Tables
+const bucketName =
+  process.env.S3_BUCKET_NAME ||
+  outputs.storage?.bucket_name ||
+  'amplify-finfinepro-vicfic-finfinedocumentstoragebu-nm3ks1cueqmt';
+
 const docTableName =
   process.env.DOCUMENT_RECORD_TABLE_NAME ||
   outputsCustom.documentRecordTableName ||
@@ -69,8 +97,37 @@ const supplierProfileTableName =
   outputsCustom.supplierProfileTableName ||
   'SupplierProfile-ifsueqzwybf6nau7duulv5qweq-NONE';
 
+const extractorArn =
+  process.env.DOCUMENT_EXTRACTOR_FUNCTION_ARN || outputsCustom.documentExtractorLambdaArn;
+const normalizerArn =
+  process.env.INGESTION_NORMALIZER_FUNCTION_ARN || outputsCustom.ingestionNormalizerLambdaArn;
+
 const s3Client = new S3Client({ region });
 const lambdaClient = new LambdaClient({ region });
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
+  marshallOptions: { removeUndefinedValues: true },
+});
+
+function cleanFileName(name: string): string {
+  const basename = name.split(/[\\/]/).pop() || 'document.pdf';
+  const normalized = basename.normalize('NFKC').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const withoutTraversal = normalized.replace(/\.\.+/g, '.');
+  return withoutTraversal.toLowerCase().endsWith('.pdf')
+    ? withoutTraversal.slice(0, 180)
+    : `${withoutTraversal.slice(0, 176)}.pdf`;
+}
+
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
+
+function isAllowed(value: FormDataEntryValue | null, allowed: Set<string>): value is string {
+  return typeof value === 'string' && allowed.has(value);
+}
+
+function canonicalCategory(value: string): string {
+  return value === 'PURCHASES' ? 'PURCHASES_SUPPLIERS' : value;
+}
 
 async function runDocumentExtractor(payload: any) {
   if (extractorArn) {
@@ -147,11 +204,13 @@ async function ingestPdfBuffer(
   fileBuffer: Buffer,
   fileName: string,
   docType: 'BANK_STATEMENT' | 'INVOICE' | 'GST_CHALLAN',
+  tenantId: string,
+  category: string = 'OTHER',
   manualMetadata: any = {}
 ) {
-  const timestamp = Date.now() + Math.floor(Math.random() * 1000);
+  const timestamp = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   const documentId = docType === 'BANK_STATEMENT' ? `stmt-${timestamp}` : `inv-${timestamp}`;
-  const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const sanitizedFileName = cleanFileName(fileName);
   const s3Key = `public/tenants/${tenantId}/raw/${documentId}-${sanitizedFileName}`;
 
   // 1. Upload to S3
@@ -165,6 +224,7 @@ async function ingestPdfBuffer(
         tenantId,
         documentId,
         documentType: docType,
+        category,
       },
     })
   );
@@ -186,48 +246,19 @@ async function ingestPdfBuffer(
     tenantId,
     documentId,
     documentType: docType,
+    category,
     manualMetadata,
   });
 
-  const pipelineResult = await runIngestionNormalizer(extractOutput);
-  return { documentId, s3Key, fileName: sanitizedFileName, pipelineResult };
-}
-
-/**
- * Ingests the complete MSME enterprise test dataset ONLY through real PDF documents
- * processed via Amazon S3 -> Document Extractor -> Ingestion Normalizer -> DynamoDB.
- * Absolutely ZERO direct database seeding.
- */
-async function ingestCompleteEnterpriseSuite() {
-  const settings = await getMerchantSettings(tenantId);
-  const businessName = settings.businessName || 'My Business';
-
-  // Ensure all sample PDFs exist on disk and reflect the business name
-  await generateAllSampleDocuments(businessName);
-
-  const sampleDir = path.join(process.cwd(), 'sample_data');
-  const results = [];
-
-  for (const item of SAMPLE_DOCUMENTS_REGISTRY) {
-    const pdfPath = path.join(sampleDir, item.fileName);
-    if (fs.existsSync(pdfPath)) {
-      const pdfBuffer = fs.readFileSync(pdfPath);
-      console.log(`[Ingestion Pipeline] Ingesting PDF: ${item.fileName} (${item.docType})...`);
-      const res = await ingestPdfBuffer(pdfBuffer, item.fileName, item.docType);
-      results.push({
-        id: item.id,
-        fileName: item.fileName,
-        documentId: res.documentId,
-        summary: res.pipelineResult?.summary,
-      });
-    }
-  }
-
-  await restartPredictionAndRefreshMetrics({
-    reason: 'Complete MSME Suite Ingested',
-    sourceDocType: 'MULTI_DOC_SUITE',
+  const pipelineResult = await runIngestionNormalizer({
+    ...extractOutput,
+    category,
+    tenantId,
+    documentId,
+    bucket: bucketName,
+    key: s3Key,
   });
-  return results;
+  return { documentId, s3Key, fileName: sanitizedFileName, pipelineResult };
 }
 
 export async function GET() {
@@ -244,44 +275,64 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const contentType = request.headers.get('content-type') || '';
+    let tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
+    try {
+      tenantId = await requirePrincipal(request);
+    } catch (authErr) {
+      if (authErr instanceof AuthenticationError) return jsonError(authErr.message, 401);
+      if (authErr instanceof AuthenticationConfigurationError) return jsonError(authErr.message, 503);
+    }
+
+    const contentType = (request.headers.get('content-type') || '').toLowerCase();
 
     // -------------------------------------------------------------------------
-    // A. JSON Payload (Quick Sample Ingestion)
+    // A. JSON Payload (Synthetic Sample Data Generation or Base64 Raw Upload)
     // -------------------------------------------------------------------------
     if (contentType.includes('application/json')) {
       const body = await request.json();
 
-      if (body.useSample || body.sampleSet === 'COMPLETE') {
-        const sampleType = body.sampleType || 'COMPLETE';
+      if (body.useSample) {
+        const sampleType = body.sampleType;
         const sampleDir = path.join(process.cwd(), 'sample_data');
-        const settings = await getMerchantSettings(tenantId);
-        const businessName = settings.businessName || 'My Business';
+        if (!fs.existsSync(sampleDir)) {
+          fs.mkdirSync(sampleDir, { recursive: true });
+        }
 
-        if (sampleType === 'COMPLETE' || !body.sampleType) {
-          console.log('[Ingestion API] Ingesting complete MSME PDF test suite (14 documents)...');
-          const results = await ingestCompleteEnterpriseSuite();
+        const settings = await getMerchantSettings(tenantId);
+        const businessName = body.businessName || settings.businessName || 'Sharma Textiles & FinTech MSME';
+
+        // Bulk generation & ingestion of all enterprise sample documents
+        if (sampleType === 'ALL' || sampleType === 'COMPLETE' || !sampleType) {
+          console.log(`[Ingestion API] Starting Enterprise Sample Document Ingestion Pipeline for "${businessName}"...`);
+          await generateAllSampleDocuments(businessName);
+
+          const results = [];
+          for (const doc of SAMPLE_DOCUMENTS_REGISTRY) {
+            const filePath = path.join(sampleDir, doc.fileName);
+            if (fs.existsSync(filePath)) {
+              console.log(`[Ingestion API] S3 Upload & Pipeline Ingestion: ${doc.fileName} (${doc.docType})...`);
+              const fileBuffer = fs.readFileSync(filePath);
+              const res = await ingestPdfBuffer(fileBuffer, doc.fileName, doc.docType, tenantId);
+              results.push({
+                documentId: res.documentId,
+                fileName: res.fileName,
+                s3Key: res.s3Key,
+                docType: doc.docType,
+                title: doc.displayName,
+              });
+            }
+          }
+
+          // Restart ML prediction & refresh cash flow metrics
           const freshMetrics = await restartPredictionAndRefreshMetrics({
-            reason: 'Complete Enterprise Suite Ingested',
-            sourceDocType: 'BANK_STATEMENT_AND_INVOICES',
+            tenantId,
+            reason: 'Full Enterprise MSME Sample Pack Ingested (All Real PDFs via S3 -> Extractor -> Normalizer)',
           });
 
           return NextResponse.json({
             success: true,
-            sampleType: 'COMPLETE',
-            documentsProcessed: results.length,
-            message: `All ${results.length} MSME sample PDF documents parsed, extracted, and normalized through Amazon S3 & DynamoDB pipeline! Cash flow prediction restarted.`,
-            featuresActivated: [
-              'Cash Runway & Spendable Liquidity Ribbon',
-              'Statutory Tax Lockbox (GST + TDS + EPFO)',
-              '60-Day Cash Flow Trajectory with Itemized Day Events',
-              'Risk Calendar Heatmap & Paginated Schedule Table',
-              'What-If Cash Simulator with Conflict Detection',
-              'Statutory Rails (GSTR-3B & Challan 281 Countdowns)',
-              'Obligations View (Fixed Overhead vs Trade Suppliers & Debtor Realities)',
-              'Working Capital Cycle (DSO, DIO, DPO, CCC)',
-              'Entity Relationship Graph (@xyflow/react)',
-            ],
+            message: `Ingested ${results.length} authentic MSME business documents into S3 & DynamoDB. Cash flow prediction restarted with live figures.`,
+            ingestedCount: results.length,
             predictionSummary: {
               modelName: freshMetrics.mlForecast?.modelName,
               solvencyStatus: freshMetrics.solvencyStatus,
@@ -310,8 +361,9 @@ export async function POST(request: Request) {
         }
 
         const fileBuffer = fs.readFileSync(samplePdfPath);
-        const result = await ingestPdfBuffer(fileBuffer, matched.fileName, matched.docType);
+        const result = await ingestPdfBuffer(fileBuffer, matched.fileName, matched.docType, tenantId);
         const freshMetrics = await restartPredictionAndRefreshMetrics({
+          tenantId,
           reason: `Single Sample PDF Ingested (${matched.id})`,
           sourceDocType: matched.docType,
         });
@@ -337,8 +389,9 @@ export async function POST(request: Request) {
         const docType = body.documentType || 'BANK_STATEMENT';
         const manualMetadata = body.metadata || {};
 
-        const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
+        const result = await ingestPdfBuffer(fileBuffer, fileName, docType, tenantId, manualMetadata);
         const freshMetrics = await restartPredictionAndRefreshMetrics({
+          tenantId,
           reason: `Raw Base64 PDF Ingested (${fileName})`,
           sourceDocType: docType,
         });
@@ -356,55 +409,212 @@ export async function POST(request: Request) {
         });
       }
 
-      throw new Error('Unsupported JSON payload. Provide useSample: true or rawBase64.');
+      return jsonError('Unsupported JSON payload. Provide useSample: true or rawBase64.', 400);
     }
 
     // -------------------------------------------------------------------------
-    // B. Multipart/form-data (Manual File Upload from Computer)
+    // B. Multipart/form-data
     // -------------------------------------------------------------------------
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
-      const file = formData.get('file') as File | null;
+
+      // Check if this is an Onboarding baseline upload
+      const purposeValue = formData.get('purpose');
+      const categoryValue = formData.get('category');
+      const isBaselineUpload = purposeValue && isAllowed(purposeValue, ALLOWED_PURPOSES);
+
+      if (isBaselineUpload) {
+        const file = formData.get('file');
+        if (!(file instanceof File)) return jsonError('A file is required', 400);
+        if (file.type !== 'application/pdf') return jsonError('Only application/pdf files are accepted', 415);
+        if (file.size <= 0 || file.size > MAX_PDF_BYTES) return jsonError('PDF files must be between 1 byte and 10 MB', 413);
+
+        if (!isAllowed(categoryValue, ALLOWED_CATEGORIES)) return jsonError('A valid document category is required', 400);
+
+        if (purposeValue === 'PERIODIC_UPDATE') {
+          await requireCompletedOnboarding(tenantId);
+        }
+
+        const bytes = Buffer.from(await file.arrayBuffer());
+        if (bytes.length > MAX_PDF_BYTES || bytes.subarray(0, PDF_SIGNATURE.length).toString('ascii') !== PDF_SIGNATURE) {
+          return jsonError('The uploaded file is not a valid PDF', 415);
+        }
+
+        const purpose = purposeValue;
+        const category = canonicalCategory(categoryValue);
+        const documentId = randomUUID();
+        const fileName = cleanFileName(file.name);
+        const objectKey = `tenants/${tenantId}/documents/${documentId}/${fileName}`;
+        const now = new Date().toISOString();
+        const documentRecord = {
+          id: documentId,
+          tenantId,
+          fileName,
+          s3Key: objectKey,
+          fileType: 'application/pdf',
+          purpose,
+          category,
+          status: 'PENDING',
+          validationStatus: 'PENDING',
+          validationIssues: [],
+          extractedEntityCount: 0,
+          createdAt: now,
+          updatedAt: now,
+          __typename: 'DocumentRecord',
+        };
+
+        await docClient.send(new PutCommand({
+          TableName: docTableName,
+          Item: documentRecord,
+          ConditionExpression: 'attribute_not_exists(id)',
+        }));
+
+        try {
+          await s3Client.send(new PutObjectCommand({
+            Bucket: bucketName,
+            Key: objectKey,
+            Body: bytes,
+            ContentType: 'application/pdf',
+            Metadata: { documentId, purpose, category },
+            ServerSideEncryption: 'AES256',
+          }));
+        } catch (uploadError) {
+          try {
+            await docClient.send(new DeleteCommand({ TableName: docTableName, Key: { id: documentId } }));
+          } catch (cleanupError) {
+            console.error('Failed to clean up pending document after S3 upload failure', cleanupError);
+          }
+          throw uploadError;
+        }
+
+        return NextResponse.json({ documentId, status: 'PENDING' }, { status: 202 });
+      }
+
+      // Standard / Bulk Ingestion Uploads
+      const rawFiles = [
+        ...formData.getAll('files'),
+        ...formData.getAll('file'),
+      ].filter((f): f is File => typeof f === 'object' && f !== null && typeof (f as any).arrayBuffer === 'function');
+
+      const files: File[] = [];
+      const seen = new Set<string>();
+      for (const f of rawFiles) {
+        const key = `${f.name}_${f.size}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          files.push(f);
+        }
+      }
+
+      if (files.length === 0) {
+        return jsonError('No file(s) provided in form-data', 400);
+      }
+
       const docType = ((formData.get('documentType') as string) || 'BANK_STATEMENT') as 'BANK_STATEMENT' | 'INVOICE';
+      const rawCategory = (formData.get('category') as string) || (docType === 'BANK_STATEMENT' ? 'BANK_ACTIVITY' : 'OTHER');
       const customVendor = formData.get('counterpartyName') as string | null;
       const customAmount = formData.get('amount') as string | null;
+      const subType = (formData.get('subType') as string) || (docType === 'INVOICE' ? 'PAYABLE' : undefined);
 
       let manualMetadata: any = {};
-      if (customVendor || customAmount) {
+      if (files.length === 1 && (customVendor || customAmount || subType || rawCategory)) {
         manualMetadata = {
           counterpartyName: customVendor,
           amount: customAmount ? parseFloat(customAmount) : undefined,
           invoiceNumber: formData.get('invoiceNumber'),
           dueDate: formData.get('dueDate'),
           gstin: formData.get('gstin'),
+          type: subType,
+          counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
+          category: rawCategory !== 'OTHER' ? rawCategory : (subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL'),
+        };
+      } else if (subType || rawCategory) {
+        manualMetadata = {
+          type: subType,
+          counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
+          category: rawCategory !== 'OTHER' ? rawCategory : (subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL'),
         };
       }
 
-      if (!file) {
-        return NextResponse.json({ error: 'No file provided in form-data' }, { status: 400 });
+      const processedResults: Array<{
+        documentId: string;
+        fileName: string;
+        s3Key: string;
+        status: 'success' | 'error';
+        error?: string;
+        pipelineSummary?: any;
+      }> = [];
+
+      for (const file of files) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const fileBuffer = Buffer.from(arrayBuffer);
+          const fileName = file.name || `upload_${Date.now()}`;
+          const result = await ingestPdfBuffer(fileBuffer, fileName, docType, tenantId, rawCategory, manualMetadata);
+          processedResults.push({
+            documentId: result.documentId,
+            fileName: result.fileName,
+            s3Key: result.s3Key,
+            status: 'success',
+            pipelineSummary: result.pipelineResult?.summary || null,
+          });
+        } catch (err: any) {
+          console.error(`[Ingestion API] Failed to ingest file "${file.name}":`, err);
+          processedResults.push({
+            documentId: '',
+            fileName: file.name,
+            s3Key: '',
+            status: 'error',
+            error: err?.message || String(err),
+          });
+        }
       }
 
-      const arrayBuffer = await file.arrayBuffer();
-      const fileBuffer = Buffer.from(arrayBuffer);
-      const fileName = file.name || `upload_${Date.now()}`;
+      const successCount = processedResults.filter((r) => r.status === 'success').length;
+      const failCount = processedResults.length - successCount;
 
-      const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
+      if (successCount === 0) {
+        return NextResponse.json(
+          {
+            error: 'Failed to process uploaded documents',
+            details: processedResults.map((r) => `${r.fileName}: ${r.error}`).join('; '),
+            results: processedResults,
+          },
+          { status: 500 }
+        );
+      }
+
+      // Re-run cash flow prediction & refresh financial store once for the entire batch
       const freshMetrics = await restartPredictionAndRefreshMetrics({
-        reason: docType === 'BANK_STATEMENT' ? `New Bank Statement Ingested (${fileName})` : `New Invoice/Bill Ingested (${fileName})`,
+        tenantId,
+        reason:
+          files.length > 1
+            ? `${successCount} Document(s) Ingested in Bulk (${docType})`
+            : docType === 'BANK_STATEMENT'
+            ? `New Bank Statement Ingested (${files[0].name})`
+            : `New Invoice/Bill Ingested (${files[0].name})`,
         sourceDocType: docType,
       });
 
+      const firstSuccess = processedResults.find((r) => r.status === 'success');
+
       return NextResponse.json({
         success: true,
-        documentId: result.documentId,
-        fileName: result.fileName,
-        s3Key: result.s3Key,
+        totalCount: files.length,
+        successCount,
+        failCount,
+        documentId: firstSuccess?.documentId,
+        fileName: firstSuccess?.fileName,
+        s3Key: firstSuccess?.s3Key,
         documentType: docType,
         message:
-          docType === 'BANK_STATEMENT'
-            ? `Successfully processed and recorded bank statement transactions. Cash flow prediction restarted with new balance.`
-            : `Successfully processed and recorded bill/invoice. Cash flow prediction restarted with new commitments.`,
-        pipelineSummary: result.pipelineResult?.summary || null,
+          files.length === 1
+            ? docType === 'BANK_STATEMENT'
+              ? `Successfully processed and recorded bank statement transactions. Cash flow prediction restarted with new balance.`
+              : `Successfully processed and recorded bill/invoice. Cash flow prediction restarted with new commitments.`
+            : `Successfully processed ${successCount} of ${files.length} documents. Cash flow records and predictions have been updated.`,
+        pipelineSummary: firstSuccess?.pipelineSummary || null,
+        results: processedResults,
         predictionSummary: {
           modelName: freshMetrics.mlForecast?.modelName,
           solvencyStatus: freshMetrics.solvencyStatus,
@@ -413,12 +623,11 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json({ error: 'Unsupported Content-Type' }, { status: 400 });
+    return jsonError('Unsupported Content-Type', 400);
   } catch (err: any) {
     console.error('Failed to ingest document:', err);
-    return NextResponse.json(
-      { error: 'Document ingestion failed', details: err?.message || String(err) },
-      { status: 500 }
-    );
+    if (err instanceof AuthenticationError) return jsonError(err.message, 401);
+    if (err instanceof AuthenticationConfigurationError) return jsonError(err.message, 503);
+    return jsonError(err?.message || 'Document ingestion failed', 500);
   }
 }

@@ -9,7 +9,7 @@ and "delete" any "Todo" records.
 const schema = a.schema({
   DocumentRecord: a
     .model({
-      tenantId: a.string(),
+      tenantId: a.string().required(),
       fileName: a.string(),
       s3Key: a.string().required(),
       fileType: a.string(),
@@ -20,12 +20,21 @@ const schema = a.schema({
       errorMessage: a.string(),
       processedAt: a.datetime(),
       sourceRecordIds: a.string().array(),
+      purpose: a.string(),
+      category: a.string(),
+      detectedCategories: a.string().array(),
+      reportingStartDate: a.string(),
+      reportingEndDate: a.string(),
+      reportingPeriod: a.json(),
+      validationStatus: a.string(),
+      validationIssues: a.string().array(),
+      readinessLink: a.string(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   Transaction: a
     .model({
-      tenantId: a.string(),
+      tenantId: a.string().required(),
       documentId: a.string(),
       date: a.string().required(), // YYYY-MM-DD
       amount: a.float().required(),
@@ -48,11 +57,11 @@ const schema = a.schema({
       obligationId: a.string(),
       sourceRecordIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   Obligation: a
     .model({
-      tenantId: a.string(),
+      tenantId: a.string().required(),
       documentId: a.string(),
       title: a.string().required(),
       counterpartyName: a.string(),
@@ -76,18 +85,24 @@ const schema = a.schema({
       priorityOverrideReason: a.string(),
       sourceRecordIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   MerchantFinancialSettings: a
     .model({
       tenantId: a.string().required(),
+      businessName: a.string(),
+      tradeName: a.string(),
+      gstin: a.string(),
+      pan: a.string(),
+      category: a.string(),
       minimumCashBuffer: a.float().required(),
       bufferRuleType: a.string(), // 'ABSOLUTE_INR' | 'DAYS_OF_EXPENSE'
       defaultForecastHorizonDays: a.integer(),
       defaultForecastHorizonWeeks: a.integer(),
+      lowRunwayAlertDays: a.integer(),
       enableConservativeFallbacks: a.boolean(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   CashPositionSnapshot: a
     .model({
@@ -98,7 +113,7 @@ const schema = a.schema({
       totalLiquidCash: a.float().required(),
       sourceDocumentIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   Product: a
     .model({
@@ -110,7 +125,7 @@ const schema = a.schema({
       isActive: a.boolean().required(),
       aliases: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   Sale: a
     .model({
@@ -124,7 +139,7 @@ const schema = a.schema({
       documentId: a.string(),
       sourceRecordIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   SaleLineItem: a
     .model({
@@ -138,7 +153,7 @@ const schema = a.schema({
       returnQuantity: a.float(),
       netSalesAmount: a.float().required(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   InventorySnapshot: a
     .model({
@@ -148,7 +163,7 @@ const schema = a.schema({
       documentId: a.string(),
       sourceRecordIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   InventoryItem: a
     .model({
@@ -159,7 +174,7 @@ const schema = a.schema({
       unitPurchaseCost: a.float(),
       inventoryValue: a.float(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   Purchase: a
     .model({
@@ -172,7 +187,7 @@ const schema = a.schema({
       obligationId: a.string(),
       sourceRecordIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   PurchaseLineItem: a
     .model({
@@ -183,7 +198,7 @@ const schema = a.schema({
       unitPurchaseCost: a.float().required(),
       totalPurchaseAmount: a.float().required(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   SupplierProfile: a
     .model({
@@ -197,7 +212,7 @@ const schema = a.schema({
       reliabilityScore: a.float(),
       notes: a.string(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   SupplierProductTerms: a
     .model({
@@ -213,7 +228,7 @@ const schema = a.schema({
       effectiveFrom: a.string(),
       effectiveTo: a.string(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   PurchaseOrder: a
     .model({
@@ -225,7 +240,7 @@ const schema = a.schema({
       documentId: a.string(),
       sourceRecordIds: a.string().array(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   PurchaseOrderLineItem: a
     .model({
@@ -236,7 +251,7 @@ const schema = a.schema({
       receivedQuantity: a.float(),
       unitPurchaseCost: a.float(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 
   RecurringExpense: a
     .model({
@@ -266,7 +281,50 @@ const schema = a.schema({
       dailyForecasts: a.json(),
       solvencySummary: a.json(),
     })
-    .authorization((allow) => [allow.guest(), allow.authenticated()]),
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
+
+  MerchantOnboarding: a
+    .model({
+      tenantId: a.string().required(),
+      status: a.string().required(),
+      currentStep: a.integer().required(),
+      profile: a.json(),
+      financialSettings: a.json(),
+      applicableCategories: a.string().array(),
+      coverage: a.json(),
+      attestations: a.json(),
+      confirmations: a.json(),
+      readiness: a.json(),
+      completedAt: a.datetime(),
+    })
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
+
+  MerchantFieldConfirmation: a
+    .model({
+      tenantId: a.string().required(),
+      documentId: a.string().required(),
+      category: a.string().required(),
+      fieldPath: a.string().required(),
+      extractedValue: a.json(),
+      confirmedValue: a.json().required(),
+      correctionType: a.string().required(),
+      reason: a.string(),
+      asOf: a.string().required(),
+      confirmedBy: a.string().required(),
+      confirmedAt: a.datetime().required(),
+    })
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
+
+  ExpectedReceivable: a
+    .model({
+      tenantId: a.string().required(),
+      customerName: a.string().required(),
+      amount: a.float().required(),
+      dueDate: a.string(),
+      confidence: a.string(),
+      sourceDocumentId: a.string(),
+    })
+    .authorization((allow) => [allow.ownerDefinedIn('tenantId').identityClaim('sub')]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -274,7 +332,7 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'identityPool',
+    defaultAuthorizationMode: 'userPool',
   },
 });
 

@@ -10,6 +10,7 @@ from finfine_agent.config import RuntimeSettings
 from finfine_agent.sessions import SessionUnavailableError
 from tests.test_sessions import FakeS3
 from finfine_agent.sessions import S3SessionRegistry
+from finfine_agent.speech_modes import VoiceMode
 
 
 def settings() -> RuntimeSettings:
@@ -64,6 +65,33 @@ def test_per_session_lock_serializes_same_session_requests() -> None:
         await asyncio.gather(*(service.invoke(item, principal, answerer) for item in requests))
         assert calls in (["start:one", "end:one", "start:two", "end:two"], ["start:two", "end:two", "start:one", "end:one"])
         return calls
+
+    asyncio.run(run())
+
+
+def test_speech_mode_is_forwarded_as_model_guidance_without_changing_visible_prompt() -> None:
+    async def run() -> None:
+        registry = S3SessionRegistry(settings(), s3_client=FakeS3())
+        service = RuntimeService(settings(), registry=registry)
+        principal = AuthenticatedPrincipal("owner-a", {})
+        modes: list[VoiceMode | None] = []
+
+        async def answerer(question: str, *, speech_mode: VoiceMode | None) -> str:
+            assert question == "What is my balance?"
+            modes.append(speech_mode)
+            return "आपका बैलेंस ..."
+
+        request = RuntimeInvocation(
+            prompt="What is my balance?",
+            requestId=UUID("315b4a4e-d5f8-4b21-911c-37bb629e869d"),
+            speechMode="hindi",
+        )
+        answer = await service.invoke(request, principal, answerer)
+        conversation = await service.get_conversation(principal, answer.session_id)
+
+        assert modes == [VoiceMode.HINDI]
+        assert conversation.messages[0].content == "What is my balance?"
+        assert conversation.messages[1].content == "आपका बैलेंस ..."
 
     asyncio.run(run())
 

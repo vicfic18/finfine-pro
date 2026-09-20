@@ -8,6 +8,7 @@ import ObligationManager from '@/components/obligations/ObligationManager';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import BrandLogo from '@/components/ui/BrandLogo';
 import type { FinancialMetricData } from '@/lib/financial-store';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 export default function ObligationsPage() {
   const { t } = useTranslation();
@@ -18,7 +19,7 @@ export default function ObligationsPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const res = await fetch('/api/dashboard/financial-data');
+        const res = await authenticatedFetch('/api/dashboard/financial-data');
         if (!res.ok) throw new Error('Failed to load financial records');
         const json = await res.json();
         setData(json);

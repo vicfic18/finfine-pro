@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import LanguageSelector from '@/components/ui/LanguageSelector';
+import BrandLogo from '@/components/ui/BrandLogo';
 
 function ArchitecturalCorner({ className }: { className?: string }) {
   return (
@@ -168,10 +169,17 @@ export default function Home() {
         {/* Left Spacer for absolute center balance */}
         <div className="flex-1" />
 
-        {/* Center: FinFine Pro in Gilroy Bold */}
-        <span className="font-sans font-bold text-base sm:text-lg tracking-tight text-neutral-900">
-          {t('common.appName', 'FinFine Pro')}
-        </span>
+        {/* Center: FinFine Pro with visible radial glow highlight */}
+        <div className="relative inline-flex items-center justify-center py-2 px-6">
+          {/* Enhanced Radial Glow Highlight */}
+          <div
+            className="absolute -inset-x-8 -inset-y-4 rounded-full pointer-events-none -z-10 blur-2xl opacity-80"
+            style={{
+              background: 'radial-gradient(ellipse at center, rgba(245, 158, 11, 0.45) 0%, rgba(99, 102, 241, 0.3) 45%, rgba(234, 88, 12, 0.15) 70%, transparent 100%)',
+            }}
+          />
+          <BrandLogo size="xl" />
+        </div>
 
         {/* Right: Language Selector + Sign in Button */}
         <div className="flex-1 flex items-center justify-end space-x-3">

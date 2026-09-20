@@ -1,7 +1,7 @@
 'use client';
 
 import { fetchAuthSession } from 'aws-amplify/auth';
-import { ArrowUp, MessageSquare, PanelLeft, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowUp, LoaderCircle, MessageSquare, Mic, PanelLeft, Play, Plus, Sparkles, Square, Trash2, Volume2, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,8 @@ import type { ChainOfThoughtStepData } from '@/components/prompt-kit/chain-of-th
 import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
 import { ThinkingBar } from '@/components/prompt-kit/thinking-bar';
 import { isChatStreamEvent, isUuid, type ChatStreamEvent, type ConversationListResponse, type ConversationResponse, type ConversationSummary } from '@/lib/chat-contract';
+import { startVoiceCapture, type VoiceCapture } from '@/lib/voice-capture';
+import { isSpeechMode, SPEECH_MODES, type SpeechMode } from '@/lib/voice-contract';
 
 const MAX_MESSAGES = 100;
 const MAX_PROMPT_LENGTH = 4_000;
@@ -22,6 +24,16 @@ type ChatResponse = {
   code?: string;
   message?: string;
 };
+
+type VoiceState = 'idle' | 'recording' | 'transcribing' | 'processing' | 'speaking';
+type VoiceTranscriptionResponse = {
+  status?: string;
+  transcript?: string;
+  code?: string;
+  message?: string;
+};
+
+const SPEECH_MODE_STORAGE_KEY = 'finfine-speech-mode';
 
 async function authenticatedFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const authSession = await fetchAuthSession();
@@ -173,9 +185,202 @@ function ChatboxContent() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [speechMode, setSpeechMode] = useState<SpeechMode>('english');
+  const [speechPreferenceLoaded, setSpeechPreferenceLoaded] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [draftFromVoice, setDraftFromVoice] = useState(false);
+  const [speechBusyRequestId, setSpeechBusyRequestId] = useState<string | null>(null);
+  const [speechReadyIds, setSpeechReadyIds] = useState<Set<string>>(new Set());
+  const [speechFailedIds, setSpeechFailedIds] = useState<Set<string>>(new Set());
+  const [activeAudioRequestId, setActiveAudioRequestId] = useState<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const captureRef = useRef<VoiceCapture | null>(null);
+  const captureGenerationRef = useRef(0);
+  const captureModeRef = useRef<SpeechMode>('english');
+  const finishRecordingRef = useRef<(generation: number) => Promise<void>>(async () => undefined);
+  const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const speechAbortControllerRef = useRef<AbortController | null>(null);
+  const transcriptionAbortControllerRef = useRef<AbortController | null>(null);
+  const audioUrlsRef = useRef<Map<string, string>>(new Map());
+  const requestModesRef = useRef<Map<string, SpeechMode>>(new Map());
+  const voiceRequestIdsRef = useRef<Set<string>>(new Set());
+
+  const stopPlayback = useCallback(() => {
+    speechAbortControllerRef.current?.abort();
+    speechAbortControllerRef.current = null;
+    const audio = playbackAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.onplay = null;
+      audio.onended = null;
+      audio.onerror = null;
+    }
+    setActiveAudioRequestId(null);
+    setVoiceState((current) => current === 'speaking' ? 'idle' : current);
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    captureGenerationRef.current += 1;
+    transcriptionAbortControllerRef.current?.abort();
+    transcriptionAbortControllerRef.current = null;
+    const capture = captureRef.current;
+    captureRef.current = null;
+    if (capture) void capture.cancel();
+    setVoiceState((current) => current === 'recording' || current === 'transcribing' ? 'idle' : current);
+  }, []);
+
+  const synthesizeSpeech = useCallback(async (
+    requestSessionId: string,
+    requestId: string,
+    mode: SpeechMode,
+    autoplay: boolean,
+  ) => {
+    stopPlayback();
+    setSpeechBusyRequestId(requestId);
+    setVoiceError(null);
+    setVoiceState('processing');
+    let url = audioUrlsRef.current.get(requestId);
+    let activeController: AbortController | null = null;
+    try {
+      if (!url) {
+        const controller = new AbortController();
+        activeController = controller;
+        speechAbortControllerRef.current = controller;
+        const response = await authenticatedFetch('/api/voice/synthesize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: requestSessionId, requestId, mode }),
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({})) as ChatResponse;
+          throw new Error(error.message || 'Could not generate speech. You can retry playback.');
+        }
+        const blob = await response.blob();
+        url = URL.createObjectURL(blob);
+        audioUrlsRef.current.set(requestId, url);
+        setSpeechReadyIds((current) => new Set(current).add(requestId));
+        setSpeechFailedIds((current) => {
+          const next = new Set(current);
+          next.delete(requestId);
+          return next;
+        });
+      }
+      if (!autoplay) {
+        setVoiceState('idle');
+        return;
+      }
+      const audio = new Audio(url);
+      playbackAudioRef.current = audio;
+      audio.onplay = () => {
+        setActiveAudioRequestId(requestId);
+        setVoiceState('speaking');
+      };
+      audio.onended = () => {
+        setActiveAudioRequestId(null);
+        setVoiceState((current) => current === 'speaking' ? 'idle' : current);
+      };
+      audio.onerror = () => {
+        setActiveAudioRequestId(null);
+        setVoiceState((current) => current === 'speaking' ? 'idle' : current);
+      };
+      try {
+        await audio.play();
+      } catch {
+        // The reply remains visible and the play control below is available if autoplay is blocked.
+        setActiveAudioRequestId(null);
+        setVoiceState('idle');
+      }
+    } catch (error) {
+      const wasAborted = error instanceof DOMException && error.name === 'AbortError';
+      if (!wasAborted) {
+        setSpeechFailedIds((current) => new Set(current).add(requestId));
+        setVoiceError(error instanceof Error ? error.message : 'Could not generate speech. You can retry playback.');
+        setVoiceState('idle');
+      }
+    } finally {
+      if (activeController && speechAbortControllerRef.current === activeController) speechAbortControllerRef.current = null;
+      setSpeechBusyRequestId((current) => current === requestId ? null : current);
+    }
+  }, [stopPlayback]);
+
+  const finishRecording = useCallback(async (generation: number) => {
+    if (generation !== captureGenerationRef.current) return;
+    const capture = captureRef.current;
+    if (!capture) return;
+    captureRef.current = null;
+    captureGenerationRef.current += 1;
+    const selectedMode = captureModeRef.current;
+    setVoiceState('transcribing');
+    setVoiceError(null);
+    const controller = new AbortController();
+    transcriptionAbortControllerRef.current = controller;
+    try {
+      const audio = await capture.stop();
+      if (captureGenerationRef.current !== generation + 1 || controller.signal.aborted) return;
+      const form = new FormData();
+      form.set('audio', audio, 'utterance.wav');
+      form.set('mode', selectedMode);
+      const response = await authenticatedFetch('/api/voice/transcribe', { method: 'POST', body: form, signal: controller.signal });
+      const payload = await response.json().catch(() => ({})) as VoiceTranscriptionResponse;
+      if (controller.signal.aborted) return;
+      if (!response.ok || payload.status !== 'success' || typeof payload.transcript !== 'string' || !payload.transcript.trim()) {
+        throw new Error(payload.message || 'Could not transcribe the recording. Please try again.');
+      }
+      setDraft(payload.transcript.slice(0, MAX_PROMPT_LENGTH));
+      setDraftFromVoice(true);
+      setVoiceState('idle');
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setVoiceState('idle');
+      setVoiceError(error instanceof Error ? error.message : 'Could not transcribe the recording. Please try again.');
+    } finally {
+      if (transcriptionAbortControllerRef.current === controller) transcriptionAbortControllerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    finishRecordingRef.current = finishRecording;
+  }, [finishRecording]);
+
+  const startRecording = useCallback(async () => {
+    stopPlayback();
+    setVoiceError(null);
+    const generation = ++captureGenerationRef.current;
+    captureModeRef.current = speechMode;
+    setVoiceState('recording');
+    try {
+      const capture = await startVoiceCapture(() => {
+        window.setTimeout(() => { void finishRecordingRef.current(generation); }, 0);
+      });
+      if (generation !== captureGenerationRef.current) {
+        await capture.cancel();
+        return;
+      }
+      captureRef.current = capture;
+    } catch (error) {
+      if (generation !== captureGenerationRef.current) return;
+      setVoiceState('idle');
+      const name = error instanceof DOMException ? error.name : '';
+      setVoiceError(name === 'NotAllowedError' || name === 'PermissionDeniedError'
+        ? 'Microphone access is blocked. Allow microphone permission in your browser, or keep typing.'
+        : error instanceof Error ? error.message : 'Could not start the microphone. You can still type your message.');
+    }
+  }, [speechMode, stopPlayback]);
+
+  const stopRecording = useCallback(() => {
+    const generation = captureGenerationRef.current;
+    if (captureRef.current) {
+      void finishRecording(generation);
+    } else {
+      captureGenerationRef.current += 1;
+      setVoiceState('idle');
+    }
+  }, [finishRecording]);
 
   const starterPrompts = [
     t('chat.starter1', 'How many days of cash runway do I currently have?'),
@@ -196,7 +401,54 @@ function ChatboxContent() {
   }, []);
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(SPEECH_MODE_STORAGE_KEY);
+      // Loading this browser-only preference after hydration intentionally updates UI state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (isSpeechMode(saved)) setSpeechMode(saved);
+    } catch {
+      // Browser storage may be disabled; speech mode still works for this visit.
+    } finally {
+      setSpeechPreferenceLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!speechPreferenceLoaded) return;
+    try {
+      window.localStorage.setItem(SPEECH_MODE_STORAGE_KEY, speechMode);
+    } catch {
+      // Browser storage may be disabled; keep the in-memory selection.
+    }
+  }, [speechMode, speechPreferenceLoaded]);
+
+  useEffect(() => () => {
+    speechAbortControllerRef.current?.abort();
+    transcriptionAbortControllerRef.current?.abort();
+    const capture = captureRef.current;
+    captureRef.current = null;
+    if (capture) void capture.cancel();
+    const audio = playbackAudioRef.current;
+    if (audio) audio.pause();
+    for (const url of audioUrlsRef.current.values()) URL.revokeObjectURL(url);
+    audioUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    const handleSignOut = () => {
+      cancelRecording();
+      stopPlayback();
+    };
+    window.addEventListener('finfine:signout', handleSignOut);
+    return () => window.removeEventListener('finfine:signout', handleSignOut);
+  }, [cancelRecording, stopPlayback]);
+
+  useEffect(() => {
     if (rawConversationId && !selectedConversationId) {
+      // Route changes must synchronously stop media before navigation continues.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      cancelRecording();
+      stopPlayback();
       router.replace('/dashboard/chat', { scroll: false });
       return;
     }
@@ -204,6 +456,16 @@ function ChatboxContent() {
     if (selectedConversationId && selectedConversationId === activeSessionIdRef.current) {
       return;
     }
+
+    cancelRecording();
+    stopPlayback();
+    for (const url of audioUrlsRef.current.values()) URL.revokeObjectURL(url);
+    audioUrlsRef.current.clear();
+    requestModesRef.current.clear();
+    voiceRequestIdsRef.current.clear();
+    setSpeechReadyIds(new Set());
+    setSpeechFailedIds(new Set());
+    setSpeechBusyRequestId(null);
 
     const controller = new AbortController();
 
@@ -257,19 +519,26 @@ function ChatboxContent() {
       }
     })();
     return () => controller.abort();
-  }, [rawConversationId, refreshHistory, router, selectedConversationId]);
+  }, [cancelRecording, rawConversationId, refreshHistory, router, selectedConversationId, stopPlayback]);
 
   const updateMessage = useCallback((messageId: string, update: Partial<ChatMessageData>) => {
     setMessages((current) => current.map((message) => message.id === messageId ? { ...message, ...update } : message));
   }, []);
 
-  const runRequest = useCallback(async (prompt: string, requestId: string, assistantId: string, requestSessionId: string | null) => {
+  const runRequest = useCallback(async (
+    prompt: string,
+    requestId: string,
+    assistantId: string,
+    requestSessionId: string | null,
+    requestSpeechMode: SpeechMode,
+    speakResponse: boolean,
+  ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
     activeRequestIdRef.current = requestId;
     setIsPending(true);
     try {
-      const response = await authenticatedFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify({ prompt, requestId, ...(requestSessionId ? { sessionId: requestSessionId } : {}) }), signal: controller.signal });
+      const response = await authenticatedFetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify({ prompt, requestId, ...(speakResponse ? { speechMode: requestSpeechMode } : {}), ...(requestSessionId ? { sessionId: requestSessionId } : {}) }), signal: controller.signal });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as ChatResponse;
         if (payload.code === 'SESSION_UNAVAILABLE') {
@@ -318,10 +587,12 @@ function ChatboxContent() {
         window.history.replaceState(null, '', `/dashboard/chat?conversation=${encodeURIComponent(completedSessionId)}`);
       }
       await refreshHistory().catch(() => undefined);
+      if (speakResponse) await synthesizeSpeech(completedSessionId, requestId, requestSpeechMode, true);
     } catch (error) {
       if (activeRequestIdRef.current !== requestId) return;
       if (error instanceof DOMException && error.name === 'AbortError') updateMessage(assistantId, { content: 'Request cancelled.', status: 'cancelled' });
       else updateMessage(assistantId, { content: error instanceof Error ? error.message : 'FinFine could not complete that request.', status: 'failed' });
+      if (speakResponse) setVoiceState('idle');
     } finally {
       if (activeRequestIdRef.current === requestId) {
         activeRequestIdRef.current = null;
@@ -329,18 +600,24 @@ function ChatboxContent() {
         setIsPending(false);
       }
     }
-  }, [refreshHistory, updateMessage]);
+  }, [refreshHistory, synthesizeSpeech, updateMessage]);
 
-  const sendMessage = useCallback(async (rawPrompt: string) => {
+  const sendMessage = useCallback(async (rawPrompt: string, speakResponse = false) => {
     const prompt = rawPrompt.trim().slice(0, MAX_PROMPT_LENGTH);
-    if (!prompt || isPending || !isHydrated) return;
+    if (!prompt || isPending || !isHydrated || voiceState === 'recording' || voiceState === 'transcribing') return;
+    stopPlayback();
     setDraft('');
+    setDraftFromVoice(false);
+    setVoiceError(null);
     setSessionUnavailable(false);
     const requestId = randomUuid();
     const assistantId = randomUuid();
+    requestModesRef.current.set(requestId, speechMode);
+    if (speakResponse) voiceRequestIdsRef.current.add(requestId);
+    if (speakResponse) setVoiceState('processing');
     setMessages((current) => [...current.slice(-(MAX_MESSAGES - 2)), { id: randomUuid(), role: 'user', content: prompt, status: 'complete', createdAt: Date.now(), requestId }, { id: assistantId, role: 'assistant', content: '', status: 'pending', createdAt: Date.now(), requestId }]);
-    await runRequest(prompt, requestId, assistantId, sessionId);
-  }, [isHydrated, isPending, runRequest, sessionId]);
+    await runRequest(prompt, requestId, assistantId, sessionId, speechMode, speakResponse);
+  }, [isHydrated, isPending, runRequest, sessionId, speechMode, stopPlayback, voiceState]);
 
   const retryMessage = useCallback((failedMessage: ChatMessageData) => {
     if (isPending) return;
@@ -348,10 +625,13 @@ function ChatboxContent() {
     const source = failedIndex >= 0 ? [...messages.slice(0, failedIndex)].reverse().find((message) => message.role === 'user') : undefined;
     if (!source) return;
     const requestId = failedMessage.requestId ?? randomUuid();
+    const retryMode = requestModesRef.current.get(requestId) ?? speechMode;
+    const speakResponse = voiceRequestIdsRef.current.has(requestId);
     updateMessage(failedMessage.id, { requestId, status: 'pending', content: '' });
     setSessionUnavailable(false);
-    void runRequest(source.content, requestId, failedMessage.id, sessionId);
-  }, [isPending, messages, runRequest, sessionId, updateMessage]);
+    if (speakResponse) setVoiceState('processing');
+    void runRequest(source.content, requestId, failedMessage.id, sessionId, retryMode, speakResponse);
+  }, [isPending, messages, runRequest, sessionId, speechMode, updateMessage]);
 
   const stopRequest = useCallback(() => {
     const activeRequestId = activeRequestIdRef.current;
@@ -359,20 +639,25 @@ function ChatboxContent() {
     activeRequestIdRef.current = null;
     abortControllerRef.current?.abort();
     setIsPending(false);
+    setVoiceState('idle');
     setMessages((current) => current.map((message) => message.requestId === activeRequestId && message.role === 'assistant' ? { ...message, content: t('chat.requestCancelled'), status: 'cancelled' } : message));
   }, [t]);
 
   const startNewChat = useCallback(() => {
     stopRequest();
+    cancelRecording();
+    stopPlayback();
     activeSessionIdRef.current = null;
     setMessages([]);
     setSessionId(null);
     setSessionUnavailable(false);
     setLoadError(null);
     setDraft('');
+    setDraftFromVoice(false);
+    setVoiceError(null);
     setHistoryOpen(false);
     router.push('/dashboard/chat', { scroll: false });
-  }, [router, stopRequest]);
+  }, [cancelRecording, router, stopPlayback, stopRequest]);
 
   const openConversation = useCallback((nextSessionId: string) => {
     if (nextSessionId === activeSessionIdRef.current) {
@@ -380,9 +665,12 @@ function ChatboxContent() {
       return;
     }
     stopRequest();
+    cancelRecording();
+    stopPlayback();
     setHistoryOpen(false);
+    setDraftFromVoice(false);
     router.push(`/dashboard/chat?conversation=${encodeURIComponent(nextSessionId)}`, { scroll: false });
-  }, [router, stopRequest]);
+  }, [cancelRecording, router, stopPlayback, stopRequest]);
 
   const deleteConversation = useCallback(async (conversation: ConversationSummary) => {
     if (!window.confirm(t('chat.deleteConfirm', { title: conversation.title }))) return;
@@ -393,6 +681,8 @@ function ChatboxContent() {
       if (!response.ok || payload.status !== 'success') throw new Error(errorMessageFor(payload, 'Could not delete this conversation.'));
       setConversations((current) => current.filter((item) => item.sessionId !== conversation.sessionId));
       if (conversation.sessionId === sessionId) {
+        cancelRecording();
+        stopPlayback();
         activeSessionIdRef.current = null;
         setMessages([]);
         setSessionId(null);
@@ -404,12 +694,20 @@ function ChatboxContent() {
     } finally {
       setDeletingId(null);
     }
-  }, [router, sessionId, t]);
+  }, [cancelRecording, router, sessionId, stopPlayback, t]);
 
   const historyProps = { conversations, selectedId: sessionId, deletingId, loading: isHistoryLoading, onOpen: openConversation, onDelete: deleteConversation, onNew: startNewChat };
+  const submitDraft = () => void sendMessage(draft, draftFromVoice);
+  const voiceStatusText: Record<VoiceState, string> = {
+    idle: '',
+    recording: 'Recording — tap the microphone to finish.',
+    transcribing: 'Transcribing your recording…',
+    processing: 'Preparing your voice reply…',
+    speaking: 'Speaking reply…',
+  };
 
   return (
-    <div className="relative mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-7xl overflow-hidden border border-neutral-200 bg-white font-sans sm:min-h-[calc(100vh-5rem)] sm:rounded-2xl">
+    <div className="relative mx-auto flex h-full min-h-[calc(100vh-4.25rem)] sm:min-h-[calc(100vh-5rem)] w-full max-w-7xl overflow-hidden border-0 sm:border sm:border-neutral-200 bg-white font-sans rounded-none sm:rounded-2xl flex-1 shadow-none sm:shadow-xs">
       <aside className="hidden w-64 shrink-0 border-r border-neutral-200 sm:block"><HistoryList {...historyProps} /></aside>
       {historyOpen && (
         <div className="fixed inset-0 z-[60] flex bg-black/25 sm:hidden" role="dialog" aria-modal="true" aria-label={t('chat.chats')}>
@@ -417,7 +715,7 @@ function ChatboxContent() {
           <button type="button" className="flex-1" onClick={() => setHistoryOpen(false)} aria-label={t('chat.closeHistory')} />
         </div>
       )}
-      <section className="flex min-w-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">
+      <section className="flex min-w-0 flex-1 flex-col px-3.5 py-3 sm:px-6 sm:py-5">
         <header className="flex items-center justify-between gap-3 border-b border-neutral-200 pb-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-neutral-200 p-2 text-neutral-600 sm:hidden" aria-label={t('chat.openHistory')}><PanelLeft size={17} /></button>
@@ -447,20 +745,83 @@ function ChatboxContent() {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-5">{messages.map((message) => <ChatMessage key={message.id} message={message} onRetry={retryMessage} />)}</div>
+            <div className="flex flex-col gap-5">{messages.map((message) => (
+              <div key={message.id}>
+                <ChatMessage message={message} onRetry={retryMessage} />
+                {message.role === 'assistant' && message.status === 'complete' && message.content.trim() && message.requestId && (
+                  <div className="mt-2 ml-1 flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={!sessionId || speechBusyRequestId === message.requestId}
+                      onClick={() => {
+                        if (activeAudioRequestId === message.requestId) stopPlayback();
+                        else if (sessionId) void synthesizeSpeech(
+                          sessionId,
+                          message.requestId!,
+                          requestModesRef.current.get(message.requestId!) ?? speechMode,
+                          true,
+                        );
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={activeAudioRequestId === message.requestId ? 'Stop spoken reply' : speechFailedIds.has(message.requestId) ? 'Retry spoken reply' : 'Play spoken reply'}
+                    >
+                      {speechBusyRequestId === message.requestId
+                        ? <LoaderCircle size={13} className="animate-spin" />
+                        : activeAudioRequestId === message.requestId ? <Square size={12} /> : speechReadyIds.has(message.requestId) ? <Volume2 size={13} /> : <Play size={13} />}
+                      {speechBusyRequestId === message.requestId
+                        ? 'Preparing audio…'
+                        : activeAudioRequestId === message.requestId ? 'Stop' : speechFailedIds.has(message.requestId) ? 'Retry speech' : speechReadyIds.has(message.requestId) ? 'Play again' : 'Play answer'}
+                    </button>
+                    {speechFailedIds.has(message.requestId) && <span className="text-[11px] text-amber-700">Text reply is still available.</span>}
+                  </div>
+                )}
+              </div>
+            ))}</div>
           )}
           <div className="mt-auto pt-6">
             {sessionUnavailable && (
               <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900" role="alert"><span>{t('chat.sessionUnavailable')}</span><button type="button" onClick={startNewChat} className="shrink-0 font-semibold underline underline-offset-2">{t('chat.newChat')}</button></div>
             )}
             {isPending && <ThinkingBar onStop={stopRequest} />}
-            <PromptInput value={draft} onValueChange={setDraft} onSubmit={() => void sendMessage(draft)} disabled={!isHydrated || isPending || isConversationLoading}>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <label className="flex items-center gap-2 text-[11px] font-medium text-neutral-500">
+                Voice language
+                <select
+                  value={speechMode}
+                  onChange={(event) => setSpeechMode(event.target.value as SpeechMode)}
+                  disabled={voiceState === 'recording' || voiceState === 'transcribing'}
+                  className="rounded-lg border border-neutral-200 bg-white px-2 py-1.5 text-xs text-neutral-700 outline-none focus:border-neutral-500 disabled:opacity-50"
+                  aria-label="Voice language"
+                >
+                  {SPEECH_MODES.map((mode) => <option key={mode} value={mode}>{mode === 'hindi' ? 'हिन्दी' : mode === 'hinglish' ? 'Hinglish' : 'English'}</option>)}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => voiceState === 'recording' ? stopRecording() : void startRecording()}
+                disabled={!isHydrated || isPending || isConversationLoading || voiceState === 'transcribing' || voiceState === 'processing'}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${voiceState === 'recording' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400 hover:text-neutral-950'}`}
+                aria-label={voiceState === 'recording' ? 'Stop recording' : 'Start voice recording'}
+              >
+                {voiceState === 'recording' ? <Square size={13} /> : <Mic size={14} />}
+                {voiceState === 'recording' ? 'Finish recording' : 'Speak'}
+              </button>
+            </div>
+            {voiceState !== 'idle' && <p className="mb-2 text-[11px] text-neutral-500" role="status">{voiceStatusText[voiceState]}</p>}
+            {voiceError && <p className="mb-2 text-[11px] text-amber-700" role="status">{voiceError}</p>}
+            {draftFromVoice && (
+              <div className="mb-2 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
+                <span>Transcript ready — edit it before sending.</span>
+                <button type="button" onClick={() => { setDraft(''); setDraftFromVoice(false); }} className="font-medium underline underline-offset-2">Clear transcript</button>
+              </div>
+            )}
+            <PromptInput value={draft} onValueChange={setDraft} onSubmit={submitDraft} disabled={!isHydrated || isPending || isConversationLoading || voiceState === 'recording' || voiceState === 'transcribing'}>
               <PromptInputTextarea placeholder={t('chat.inputPlaceholder')} maxLength={MAX_PROMPT_LENGTH} />
               <PromptInputActions className="justify-between items-center">
                 <span className="text-[10px] text-neutral-400 font-mono hidden sm:inline pl-2 select-none">
                   Press ⌘↵ or Enter to send
                 </span>
-                <PromptInputAction tooltip={t('chat.sendMessageTooltip')}><button type="button" onClick={() => void sendMessage(draft)} disabled={!isHydrated || isPending || !draft.trim()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400" aria-label={t('chat.sendMessageTooltip')}><ArrowUp size={17} strokeWidth={2.2} /></button></PromptInputAction>
+                <PromptInputAction tooltip={t('chat.sendMessageTooltip')}><button type="button" onClick={submitDraft} disabled={!isHydrated || isPending || !draft.trim() || voiceState === 'recording' || voiceState === 'transcribing'} className="flex h-9 w-9 items-center justify-center rounded-xl bg-neutral-900 text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-400" aria-label={t('chat.sendMessageTooltip')}><ArrowUp size={17} strokeWidth={2.2} /></button></PromptInputAction>
               </PromptInputActions>
             </PromptInput>
             {latestAssistant?.status === 'complete' && <p className="mt-2 text-center text-[10px] text-neutral-400">{t('chat.footerNotice')}</p>}

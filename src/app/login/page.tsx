@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import {
   confirmResetPassword,
   getCurrentUser,
 } from 'aws-amplify/auth';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 type AuthMode = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'confirmResetPassword';
 
@@ -34,19 +35,33 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [infoMsg, setInfoMsg] = useState('');
 
+  const routeAfterAuth = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch('/api/onboarding/status');
+      if (response.ok) {
+        const payload = await response.json();
+        router.push(payload.onboarding?.status === 'COMPLETED' ? '/dashboard' : '/onboarding');
+        return;
+      }
+    } catch {
+      // The dashboard gate will show the actionable auth error if status cannot be loaded.
+    }
+    router.push('/onboarding');
+  }, [router]);
+
   // If user is already authenticated, take them directly to the dashboard
   useEffect(() => {
     async function checkAuth() {
       try {
         await getCurrentUser();
-        router.push('/dashboard');
+        await routeAfterAuth();
       } catch {
         // User not logged in, stay on login page
         setCheckingAuth(false);
       }
     }
     checkAuth();
-  }, [router]);
+  }, [router, routeAfterAuth]);
 
   const clearMessages = () => {
     setErrorMsg('');
@@ -99,7 +114,7 @@ export default function LoginPage() {
       });
 
       if (result.nextStep.signInStep === 'DONE') {
-        router.push('/dashboard');
+        await routeAfterAuth();
       } else if (result.nextStep.signInStep === 'CONFIRM_SIGN_UP') {
         setInfoMsg('Please verify your email address to complete registration.');
         setMode('confirmSignUp');
@@ -179,7 +194,7 @@ export default function LoginPage() {
             username: email.trim().toLowerCase(),
             password,
           });
-          router.push('/dashboard');
+          await routeAfterAuth();
         } else {
           setInfoMsg('Email confirmed! Please sign in with your password.');
           setMode('signIn');

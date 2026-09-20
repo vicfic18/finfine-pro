@@ -1,5 +1,8 @@
 # System Architecture Design Document: Agentic Financial Copilot for Indian MSMEs
 
+> [!NOTE]
+> For the comprehensive, audited AWS architecture diagram and implementation breakdown with exact ARNs, table schemas, Step Function state machines, and Mermaid diagrams, refer to [AWS_ARCHITECTURE.md](file:///home/vicfic/prog/hacks/finfine-pro/docs/AWS_ARCHITECTURE.md).
+
 ---
 
 ## 1. Executive Summary & Problem Context
@@ -91,14 +94,14 @@ This architecture defines a semi-autonomous, agentic financial operating system 
             ▼                                 ▼
 ┌───────────────────────────────┐ ┌───────────────────────────────────────┐
 │ 3. Asynchronous Ingestion     │ │ 4. Synchronous Agentic Decision Core  │
-│   [Amazon S3 (Presigned)]     │ │   [Amazon Bedrock Agents (Orch.)]     │
+│   [Server-mediated S3 upload] │ │   [Authenticated agent runtime]       │
 │              │                │ │                  │                    │
 │   [Amazon EventBridge]        │ │                  ▼                    │
 │              │                │ │   [AWS Lambda (Action Group Adapters)]│
 │              ▼                │ └───────────────┬───────────────────────┘
 │   [AWS Step Functions]        │                 │
-│        ├─► [Bedrock Vision]   │                 │ (HTTP / RPC)
-│        └─► [Parser Lambda]    │                 ▼
+│        ├─► [unpdf extraction] │                 │ (HTTP / RPC)
+│        └─► [Normalizer Lambda]│                 ▼
 └──────────────┬────────────────┘ ┌───────────────────────────────────────┐
                │                  │ 5. Deterministic Computation Engine   │
                │ (Normalized)     │   [AWS App Runner (FastAPI / PuLP)]   │
@@ -117,17 +120,15 @@ This architecture defines a semi-autonomous, agentic financial operating system 
 
 ### 3.2 Ingestion & Processing Pipeline (Asynchronous)
 
-* **Amazon S3:** Serves as the immutable object store. It provides secure, presigned upload URLs for user documents, isolating raw artifacts from web application servers. S3 buckets implement explicit lifecycle rules to transition intermediate files to infrequent tiers or expire them post-processing to minimize storage overhead.
+* **Amazon S3:** Serves as the immutable object store. Authenticated server routes validate PDFs and upload them under a Cognito-sub-derived tenant prefix; browsers receive no direct bucket permissions.
 * **Amazon EventBridge:** Captures S3 `ObjectCreated` events. It decouples document ingress from the downstream processing pipeline, broadcasting events directly to the orchestration state machine.
 * **AWS Step Functions:** Orchestrates the ingestion workflow. The state machine manages parallel execution branches for multi-page documents, implements retries with exponential backoff, and tracks job status across extraction, validation, and database ingestion states.
-* **Amazon Bedrock (NVIDIA Nemotron Nano 12B / Claude Multimodal):** Acts as the multimodal extraction engine (`nvidia.nemotron-nano-12b-v2` / Claude). By executing structured schema extraction directly against invoice and statement images/PDFs, it bypasses the language limitations of traditional OCR engines, capturing multilingual terminology, non-standard invoice formats, and handwritten receipts at low token costs.
-* **AWS Lambda (Ingestion Normalizer):** Validates the raw JSON emitted by the extraction model against normalized canonical schemas (detailed in [DATA_SCHEMA_AND_STORAGE.md](file:///home/vicfic/prog/hacks/finfine-pro/docs/DATA_SCHEMA_AND_STORAGE.md)). It resolves dates into standardized ISO formats, extracts statutory identifiers (GSTIN, PAN), reconciles transaction classifications, computes solver priority weights ($w_i^{\text{type}}$), and executes batch writes to DynamoDB.
+* **AWS Lambda with `unpdf`:** Extracts embedded PDF text and positioned text items locally, preserving page/row provenance. Deterministic parsers recognize supported financial documents without a remote extraction model. Image-only scans are marked as requiring review because OCR is intentionally unavailable.
+* **AWS Lambda (Ingestion Normalizer):** Validates the local extraction against normalized canonical schemas. It resolves dates into standardized ISO formats, extracts statutory identifiers (GSTIN, PAN), reconciles transaction classifications, creates validated cash snapshots, and executes batch writes to DynamoDB.
 
 ### 3.3 Synchronous Agentic Decision Core
 
-* **Amazon API Gateway:** Provides the single RESTful entry point for conversational queries and financial state fetching. It validates Cognito JWT tokens, handles throttling, and routes requests to Bedrock Agent proxy Lambdas.
-* **Amazon Bedrock Agents:** Functions as the conversational orchestrator. Configured with a system prompt optimized for financial reasoning and Indian MSME operational realities, the agent breaks user prompts into logical execution steps, selects appropriate Action Groups, passes structured inputs, and aggregates tool outputs into a coherent, natural response.
-* **AWS Lambda (Action Group Handlers):** Implements the OpenAPI interface required by Bedrock Agents. Functions map agent action requests to backend data calls (fetching current liquidity state from DynamoDB) or simulation executions (forwarding hypothetical financial parameters to the deterministic computation engine).
+* **Authenticated agent runtime:** The tenant-scoped FastAPI/Strands runtime validates Cognito access tokens and binds all financial tools to the verified subject.
 
 ### 3.4 Deterministic Computation Engine
 
@@ -166,15 +167,11 @@ Where $w_i^{\text{type}}$ represents statutory or operational criticality, $w_i^
 
 ### 4.1 Asynchronous Document Ingestion Workflow
 
-1. The MSME user initiates an upload through the Next.js interface. The frontend requests a presigned URL from API Gateway.
-2. The client uploads the artifact directly to an S3 raw ingestion bucket under a tenant-specific prefix.
+1. The MSME user uploads a PDF through the authenticated Next.js server route.
+2. The server validates the MIME type, signature and size, creates a pending manifest, and writes the artifact under a Cognito-sub-derived S3 prefix.
 3. S3 publishes an event to EventBridge, which triggers the Step Functions Ingestion State Machine.
-4. Step Functions executes a Lambda task that evaluates the document's MIME type:
-* Single-page images and digital invoice screenshots pass directly to Amazon Bedrock (Claude 3.5 Haiku) with a strict prompt defining the required financial extraction schema.
-* Multi-page PDFs are decomposed into page-level representations before invoking Haiku concurrently.
-
-
-5. The model outputs structured JSON containing the financial entities.
+4. Step Functions executes a Lambda task that loads the authoritative document manifest and extracts embedded text and positioned items locally with `unpdf`.
+5. Deterministic category parsers produce structured financial entities with page/row provenance. Image-only scans are returned with an explicit OCR-unavailable validation issue.
 6. A Normalization Lambda function validates extracted amounts, assigns system priority weights based on document type (e.g., GST challans receive statutory classification), and updates the tenant's ledger and obligation records in DynamoDB.
 7. EventBridge emits an internal notification that triggers a lightweight state recalculation, updating the tenant's baseline Days-to-Zero indicator.
 
@@ -182,12 +179,12 @@ Where $w_i^{\text{type}}$ represents statutory or operational criticality, $w_i^
 [Client] ──(1. Get Presigned URL)──► [API Gateway] ──► [Lambda]
    │                                                      │
    ▼                                                      ▼
-[Upload Image/PDF] ──(2. S3 Bucket) ──► [EventBridge] ──► [Step Functions]
+[Upload PDF] ──(2. S3 Bucket) ──► [EventBridge] ──► [Step Functions]
                                                                │
                                   ┌────────────────────────────┴───────────────────────────┐
                                   ▼                                                        ▼
-                     [Bedrock Claude 3.5 Haiku]                                [Normalization Lambda]
-                     (Extract JSON Entities)                                   (Validate & Standardize)
+                     [unpdf Extractor Lambda]                                  [Normalization Lambda]
+                     (Local deterministic parse)                               (Validate & Standardize)
                                   │                                                        │
                                   └────────────────────────────┬───────────────────────────┘
                                                                ▼
@@ -197,7 +194,7 @@ Where $w_i^{\text{type}}$ represents statutory or operational criticality, $w_i^
 
 ### 4.2 Deterministic Solvency Evaluation & Scenario Simulation
 
-1. An incoming conversational query (e.g., *"Can I purchase ₹60,000 worth of equipment today?"*) is routed by API Gateway to the Amazon Bedrock Agent.
+1. An incoming conversational query (e.g., *"Can I purchase ₹60,000 worth of equipment today?"*) is routed through the authenticated proxy to the tenant-scoped agent runtime.
 2. The Agent analyzes the intent, identifying the need for current balance parameters, short-term commitments, and scenario modeling.
 3. The Agent invokes its registered Action Group Lambda, which reads the current normalized financial profile from DynamoDB.
 4. The Lambda forwards the retrieved state along with the simulated parameter (immediate cash reduction of ₹60,000) to the App Runner service via a private HTTP endpoint.
@@ -208,11 +205,11 @@ Where $w_i^{\text{type}}$ represents statutory or operational criticality, $w_i^
 
 
 6. App Runner returns deterministic simulation results (solver status, Days-to-Zero impact, constraint violations, and optimal disbursement schedules) to the Action Group Lambda.
-7. The Lambda passes the structured calculation back to the Bedrock Agent.
+7. The calculation result is returned to the tenant-scoped agent runtime.
 
 ### 4.3 Multilingual Action Generation & Reasoning
 
-1. The Bedrock Agent synthesizes the deterministic solver output using a secondary reasoning step powered by Claude 3.5 Sonnet.
+1. The configured OpenAI-compatible model synthesizes the deterministic solver output.
 2. The Agent builds a structured Chain-of-Thought explanation:
 * It states the immediate impact on runway (e.g., *"Purchasing this today reduces your cash runway from 18 days to 5 days"*).
 * It highlights the specific conflict (e.g., *"A ₹45,000 GST liability is due in 6 days and cannot be covered if this expense occurs now"*).
@@ -228,7 +225,7 @@ Where $w_i^{\text{type}}$ represents statutory or operational criticality, $w_i^
 5. The structured response, containing the explanation, visualization data points, and ready-to-use message drafts, is delivered to the frontend interface.
 
 ```
-[User Query] ──► [API Gateway] ──► [Bedrock Agent (Claude 3.5 Sonnet)]
+[User Query] ──► [Authenticated proxy] ──► [Tenant-scoped agent runtime]
                                             │
                                             ▼ (Action Group Call)
                                    [Tool Handler Lambda]
@@ -240,7 +237,7 @@ Where $w_i^{\text{type}}$ represents statutory or operational criticality, $w_i^
                     │                                               │
                     └───────────────────────┬───────────────────────┘
                                             ▼
-                               [Bedrock Agent Synthesis]
+                               [Model response synthesis]
                        (Generate Vernacular CoT & Action Drafts)
                                             │
                                             ▼

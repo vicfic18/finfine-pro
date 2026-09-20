@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   Receipt,
 } from 'lucide-react';
+import clsx from 'clsx';
 import type { BankStatementDoc, BillInvoiceDoc } from '@/app/api/ingestion/documents/route';
 
 interface DocumentDetailModalProps {
@@ -19,7 +20,10 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
   if (!document) return null;
 
   const isBankStatement = document.documentType === 'BANK_STATEMENT';
-  const raw = document.rawMetadata || {};
+  const raw = (document.rawMetadata || {}) as Record<string, any>;
+  const lineItems: Record<string, any>[] = Array.isArray(raw.lineItems)
+    ? raw.lineItems.filter((item: any): item is Record<string, any> => Boolean(item) && typeof item === 'object')
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 backdrop-blur-xs font-sans">
@@ -148,31 +152,44 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-neutral-50 border border-neutral-200">
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  {t('ingestion.counterparty')}
+                  {((document as BillInvoiceDoc).counterpartyType === 'CUSTOMER' || (document as BillInvoiceDoc).category === 'CUSTOMER_INVOICE')
+                    ? t('ingestion.customerCol', 'Customer Name')
+                    : t('ingestion.supplierCol', 'Who to Pay (Supplier)')}
                 </span>
                 <span className="font-bold text-neutral-900 text-sm">
                   {(document as BillInvoiceDoc).counterpartyName}
                 </span>
-                <span className="text-[11px] text-neutral-500 block">
-                  {(document as BillInvoiceDoc).counterpartyType}
+                <span className="text-[11px] font-semibold text-neutral-600 block">
+                  {((document as BillInvoiceDoc).counterpartyType === 'CUSTOMER' || (document as BillInvoiceDoc).category === 'CUSTOMER_INVOICE')
+                    ? 'Customer (Money to Receive)'
+                    : 'Supplier (Money to Pay)'}
                 </span>
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  {t('ingestion.amountLabel')}
+                  {t('ingestion.amountLabel', 'Amount (₹)')}
                 </span>
-                <span className="font-bold text-neutral-900 text-sm font-mono">
-                  ₹{(document as BillInvoiceDoc).amount.toLocaleString('en-IN')}
+                <span
+                  className={clsx(
+                    "font-bold text-sm font-mono",
+                    ((document as BillInvoiceDoc).counterpartyType === 'CUSTOMER' || (document as BillInvoiceDoc).category === 'CUSTOMER_INVOICE')
+                      ? "text-emerald-700"
+                      : "text-indigo-700"
+                  )}
+                >
+                  {((document as BillInvoiceDoc).counterpartyType === 'CUSTOMER' || (document as BillInvoiceDoc).category === 'CUSTOMER_INVOICE') ? '+' : '-'}₹{(document as BillInvoiceDoc).amount.toLocaleString('en-IN')}
                 </span>
-                {(document as BillInvoiceDoc).taxAmount && (
+                {(document as BillInvoiceDoc).taxAmount ? (
                   <span className="text-[11px] text-neutral-500 block">
-                    Tax: ₹{(document as BillInvoiceDoc).taxAmount?.toLocaleString('en-IN')}
+                    GST: ₹{(document as BillInvoiceDoc).taxAmount?.toLocaleString('en-IN')}
                   </span>
-                )}
+                ) : null}
               </div>
               <div>
                 <span className="text-[10px] uppercase font-bold text-neutral-500 block">
-                  {t('ingestion.dueDate')}
+                  {((document as BillInvoiceDoc).counterpartyType === 'CUSTOMER' || (document as BillInvoiceDoc).category === 'CUSTOMER_INVOICE')
+                    ? t('ingestion.expectedDateLabel', 'Expected Date')
+                    : t('ingestion.dueDate', 'Due Date')}
                 </span>
                 <span className="font-semibold text-neutral-800 text-sm">
                   {(document as BillInvoiceDoc).dueDate || 'Immediate'}
@@ -206,7 +223,7 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
             </div>
 
             {/* Line items if available */}
-            {raw.lineItems && Array.isArray(raw.lineItems) && (
+            {lineItems.length > 0 && (
               <div>
                 <span className="text-xs font-bold uppercase tracking-wider text-neutral-600 block mb-2">
                   {t('ingestion.extractedLineItems')}:
@@ -222,12 +239,12 @@ export default function DocumentDetailModal({ document, onClose }: DocumentDetai
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200">
-                      {raw.lineItems.map((item: any, idx: number) => (
+                      {lineItems.map((item, idx) => (
                         <tr key={idx} className="hover:bg-neutral-50/50">
-                          <td className="p-2">{item.desc || item.description}</td>
-                          <td className="p-2 text-right font-mono">{item.qty}</td>
-                          <td className="p-2 text-right font-mono">₹{item.rate}</td>
-                          <td className="p-2 text-right font-mono font-bold">₹{item.total}</td>
+                          <td className="p-2">{String(item.desc || item.description || '')}</td>
+                          <td className="p-2 text-right font-mono">{String(item.qty ?? '')}</td>
+                          <td className="p-2 text-right font-mono">₹{String(item.rate ?? '')}</td>
+                          <td className="p-2 text-right font-mono font-bold">₹{String(item.total ?? '')}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+from finfine_agent.speech_modes import VoiceMode, response_language_instruction
+
 SYSTEM_INSTRUCTIONS = """
 You are FinFine Pro, a financial assistant for an Indian small business.
 
@@ -84,12 +86,17 @@ payments, or take external action. You may draft suggestions for the user to rev
 """.strip()
 
 
-def build_system_instructions(now: datetime | None = None) -> str:
+def build_system_instructions(
+    now: datetime | None = None,
+    speech_mode: VoiceMode | None = None,
+) -> str:
     """Add the current local clock to the stable agent instructions."""
     current = now or datetime.now().astimezone()
     current_text = current.isoformat(timespec="seconds")
+    voice_instruction = response_language_instruction(speech_mode)
     return (
         f"Current local date and time: {current_text}. "
         "If a user omits a year and the date is ambiguous, ask instead of guessing.\n\n"
         f"{SYSTEM_INSTRUCTIONS}"
+        + (f"\n\nVoice response language requirement: {voice_instruction}" if voice_instruction else "")
     )

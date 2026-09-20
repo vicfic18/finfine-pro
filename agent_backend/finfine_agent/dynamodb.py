@@ -27,7 +27,7 @@ class ReadResult(list[dict[str, Any]]):
 class DynamoFinancialStore:
     """Read financial records for one configured tenant."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, tenant_id: str) -> None:
         session = boto3.Session(
             profile_name=settings.aws_profile,
             region_name=settings.aws_region,
@@ -42,8 +42,18 @@ class DynamoFinancialStore:
         )
         self._client = self._resource.meta.client
         self._settings = settings
+        self._tenant_id = tenant_id.strip()
+        if not self._tenant_id:
+            raise ValueError("A request-scoped tenant is required")
         self._table_cache: dict[str, str | None] = {}
         self._table_resolution_warnings: dict[str, str | None] = {}
+
+    def _tenant(self) -> str:
+        """Return the request tenant, with a test-only settings fallback."""
+        tenant_id = getattr(self, "_tenant_id", None) or getattr(self._settings, "tenant_id", None)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("A request-scoped tenant is required")
+        return tenant_id.strip()
 
     def _resolve_table(self, configured_name: str | None, prefix: str) -> str | None:
         if configured_name:
@@ -74,7 +84,7 @@ class DynamoFinancialStore:
         end_date: str | None = None,
         status: str | None = "EXTRACTED",
     ) -> ReadResult:
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if status:
             condition &= Attr("status").eq(status)
         condition = self._add_date_range(
@@ -95,7 +105,7 @@ class DynamoFinancialStore:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> ReadResult:
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if start_date and end_date:
             condition &= Attr("date").between(start_date, end_date)
         elif start_date:
@@ -114,7 +124,7 @@ class DynamoFinancialStore:
         end_date: str | None = None,
         status: str | None = None,
     ) -> ReadResult:
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if status:
             condition &= Attr("status").eq(status)
         condition = self._add_date_range(
@@ -135,7 +145,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.merchant_settings_table_name, "MerchantFinancialSettings")
         if not table_name:
             return self._empty_optional("merchant_settings", "MerchantFinancialSettings")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         return self._scan(
             table_name,
             condition,
@@ -155,7 +165,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.cash_position_table_name, "CashPositionSnapshot")
         if not table_name:
             return self._empty_optional("cash_positions", "CashPositionSnapshot")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         condition = self._add_date_range(condition, "asOf", start_date, end_date)
         return self._scan(
             table_name,
@@ -174,7 +184,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.product_table_name, "Product")
         if not table_name:
             return self._empty_optional("products", "Product")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if is_active_only:
             condition &= Attr("isActive").eq(True)
         return self._scan(
@@ -192,7 +202,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.sale_table_name, "Sale")
         if not table_name:
             return self._empty_optional("sales", "Sale")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if start_date and end_date:
             condition &= Attr("saleDate").between(start_date, end_date)
         elif start_date:
@@ -209,7 +219,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.sale_line_item_table_name, "SaleLineItem")
         if not table_name:
             return self._empty_optional("sale_line_items", "SaleLineItem")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if sale_id:
             condition &= Attr("saleId").eq(sale_id)
         if product_id:
@@ -229,7 +239,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.inventory_snapshot_table_name, "InventorySnapshot")
         if not table_name:
             return self._empty_optional("inventory_snapshots", "InventorySnapshot")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         condition = self._add_date_range(condition, "snapshotDate", start_date, end_date)
         return self._scan(
             table_name,
@@ -246,7 +256,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.inventory_item_table_name, "InventoryItem")
         if not table_name:
             return self._empty_optional("inventory_items", "InventoryItem")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if snapshot_id:
             condition &= Attr("inventorySnapshotId").eq(snapshot_id)
         if product_id:
@@ -267,7 +277,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_table_name, "Purchase")
         if not table_name:
             return self._empty_optional("purchases", "Purchase")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if start_date and end_date:
             condition &= Attr("purchaseDate").between(start_date, end_date)
         elif start_date:
@@ -291,7 +301,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_line_item_table_name, "PurchaseLineItem")
         if not table_name:
             return self._empty_optional("purchase_line_items", "PurchaseLineItem")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if purchase_id:
             condition &= Attr("purchaseId").eq(purchase_id)
         if product_id:
@@ -307,7 +317,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.supplier_profile_table_name, "SupplierProfile")
         if not table_name:
             return self._empty_optional("suppliers", "SupplierProfile")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         return self._scan(
             table_name,
             condition,
@@ -323,7 +333,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.supplier_product_terms_table_name, "SupplierProductTerms")
         if not table_name:
             return self._empty_optional("supplier_product_terms", "SupplierProductTerms")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if supplier_id:
             condition &= Attr("supplierId").eq(supplier_id)
         if product_id:
@@ -345,7 +355,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_order_table_name, "PurchaseOrder")
         if not table_name:
             return self._empty_optional("purchase_orders", "PurchaseOrder")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if status:
             condition &= Attr("status").eq(status)
         condition = self._add_date_range(condition, "orderDate", start_date, end_date)
@@ -369,7 +379,7 @@ class DynamoFinancialStore:
                 "purchase_order_line_items",
                 "PurchaseOrderLineItem",
             )
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if purchase_order_id:
             condition &= Attr("purchaseOrderId").eq(purchase_order_id)
         if product_id:
@@ -385,7 +395,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.recurring_expense_table_name, "RecurringExpense")
         if not table_name:
             return self._empty_optional("recurring_expenses", "RecurringExpense")
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant())
         if is_active:
             condition &= Attr("isActive").eq(True)
         return self._scan(

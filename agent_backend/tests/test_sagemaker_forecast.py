@@ -45,8 +45,9 @@ def test_predict_cash_flow_sagemaker_tool_execution(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "finfine_agent.tools.sagemaker_forecast.DynamoFinancialStore",
-        lambda settings: mock_store,
+        lambda settings, **_kwargs: mock_store,
     )
+    monkeypatch.setenv("FINFINE_TENANT_ID", "tenant-test")
 
     result = predict_cash_flow_sagemaker(
         horizon_days=60,

@@ -360,6 +360,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "python-dotenv" },
+    { name = "python-multipart" },
     { name = "strands-agents", extra = ["gemini", "openai"] },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -377,6 +378,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9,<3" },
     { name = "python-dotenv", specifier = ">=1,<2" },
+    { name = "python-multipart", specifier = ">=0.0.20,<1" },
     { name = "strands-agents", extras = ["gemini", "openai"], specifier = ">=1,<2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30,<1" },
 ]

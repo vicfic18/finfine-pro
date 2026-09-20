@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM public.ecr.aws/docker/library/python:3.11-slim
+FROM --platform=linux/amd64 public.ecr.aws/awsguru/aws-lambda-adapter:1.0.1 AS lambda-adapter
+FROM --platform=linux/amd64 public.ecr.aws/docker/library/python:3.11-slim
 
 # Include AWS Lambda Web Adapter binary
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.4 /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 
 # Lambda Web Adapter configuration
 ENV PORT=8080
