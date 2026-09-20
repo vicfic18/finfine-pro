@@ -149,7 +149,7 @@ async function ingestPdfBuffer(
   docType: 'BANK_STATEMENT' | 'INVOICE' | 'GST_CHALLAN',
   manualMetadata: any = {}
 ) {
-  const timestamp = Date.now() + Math.floor(Math.random() * 1000);
+  const timestamp = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   const documentId = docType === 'BANK_STATEMENT' ? `stmt-${timestamp}` : `inv-${timestamp}`;
   const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
   const s3Key = `public/tenants/${tenantId}/raw/${documentId}-${sanitizedFileName}`;
@@ -193,43 +193,6 @@ async function ingestPdfBuffer(
   return { documentId, s3Key, fileName: sanitizedFileName, pipelineResult };
 }
 
-/**
- * Ingests the complete MSME enterprise test dataset ONLY through real PDF documents
- * processed via Amazon S3 -> Document Extractor -> Ingestion Normalizer -> DynamoDB.
- * Absolutely ZERO direct database seeding.
- */
-async function ingestCompleteEnterpriseSuite() {
-  const settings = await getMerchantSettings(tenantId);
-  const businessName = settings.businessName || 'My Business';
-
-  // Ensure all sample PDFs exist on disk and reflect the business name
-  await generateAllSampleDocuments(businessName);
-
-  const sampleDir = path.join(process.cwd(), 'sample_data');
-  const results = [];
-
-  for (const item of SAMPLE_DOCUMENTS_REGISTRY) {
-    const pdfPath = path.join(sampleDir, item.fileName);
-    if (fs.existsSync(pdfPath)) {
-      const pdfBuffer = fs.readFileSync(pdfPath);
-      console.log(`[Ingestion Pipeline] Ingesting PDF: ${item.fileName} (${item.docType})...`);
-      const res = await ingestPdfBuffer(pdfBuffer, item.fileName, item.docType);
-      results.push({
-        id: item.id,
-        fileName: item.fileName,
-        documentId: res.documentId,
-        summary: res.pipelineResult?.summary,
-      });
-    }
-  }
-
-  await restartPredictionAndRefreshMetrics({
-    reason: 'Complete MSME Suite Ingested',
-    sourceDocType: 'MULTI_DOC_SUITE',
-  });
-  return results;
-}
-
 export async function GET() {
   return NextResponse.json({
     availableSampleDocuments: SAMPLE_DOCUMENTS_REGISTRY.map((d) => ({
@@ -242,41 +205,64 @@ export async function GET() {
   });
 }
 
+/**
+ * Ingests the complete MSME enterprise test dataset ONLY through real PDF documents
+ * processed via Amazon S3 -> Document Extractor -> Ingestion Normalizer -> DynamoDB.
+ * Absolutely ZERO direct database seeding.
+ */
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get('content-type') || '';
 
     // -------------------------------------------------------------------------
-    // A. JSON Payload (Quick Sample Ingestion)
+    // A. JSON Payload (Synthetic Sample Data Generation or Base64 Raw Upload)
     // -------------------------------------------------------------------------
     if (contentType.includes('application/json')) {
       const body = await request.json();
 
-      if (body.useSample || body.sampleSet === 'COMPLETE') {
-        const sampleType = body.sampleType || 'COMPLETE';
+      if (body.useSample) {
+        const sampleType = body.sampleType;
         const sampleDir = path.join(process.cwd(), 'sample_data');
-        const settings = await getMerchantSettings(tenantId);
-        const businessName = settings.businessName || 'My Business';
+        if (!fs.existsSync(sampleDir)) {
+          fs.mkdirSync(sampleDir, { recursive: true });
+        }
 
-        if (sampleType === 'COMPLETE' || !body.sampleType) {
-          console.log('[Ingestion API] Ingesting complete MSME PDF test suite (14 documents)...');
-          const results = await ingestCompleteEnterpriseSuite();
+        const settings = await getMerchantSettings(tenantId);
+        const businessName = body.businessName || settings.businessName || 'Sharma Textiles & FinTech MSME';
+
+        // Bulk generation & ingestion of all enterprise sample documents
+        if (sampleType === 'ALL' || sampleType === 'COMPLETE' || !sampleType) {
+          console.log(`[Ingestion API] Starting Enterprise Sample Document Ingestion Pipeline for "${businessName}"...`);
+          await generateAllSampleDocuments(businessName);
+          const sampleDir = path.join(process.cwd(), 'sample_data');
+
+          const results = [];
+          for (const doc of SAMPLE_DOCUMENTS_REGISTRY) {
+            const filePath = path.join(sampleDir, doc.fileName);
+            if (fs.existsSync(filePath)) {
+              console.log(`[Ingestion API] S3 Upload & Pipeline Ingestion: ${doc.fileName} (${doc.docType})...`);
+              const fileBuffer = fs.readFileSync(filePath);
+              const res = await ingestPdfBuffer(fileBuffer, doc.fileName, doc.docType);
+              results.push({
+                documentId: res.documentId,
+                fileName: res.fileName,
+                s3Key: res.s3Key,
+                docType: doc.docType,
+                title: doc.displayName,
+              });
+            }
+          }
+
+          // Restart ML prediction & refresh cash flow metrics
           const freshMetrics = await restartPredictionAndRefreshMetrics({
-            reason: 'Complete Enterprise Suite Ingested',
-            sourceDocType: 'BANK_STATEMENT_AND_INVOICES',
+            reason: 'Full Enterprise MSME Sample Pack Ingested (All Real PDFs via S3 -> Extractor -> Normalizer)',
           });
 
           return NextResponse.json({
             success: true,
-            sampleType: 'COMPLETE',
-            documentsProcessed: results.length,
-            message: `All ${results.length} MSME sample PDF documents parsed, extracted, and normalized through Amazon S3 & DynamoDB pipeline! Cash flow prediction restarted.`,
-            featuresActivated: [
-              'Cash Runway & Spendable Liquidity Ribbon',
-              'Statutory Tax Lockbox (GST + TDS + EPFO)',
-              '60-Day Cash Flow Trajectory with Itemized Day Events',
-              'Risk Calendar Heatmap & Paginated Schedule Table',
-              'What-If Cash Simulator with Conflict Detection',
+            message: `Ingested ${results.length} authentic MSME business documents into S3 & DynamoDB. Cash flow prediction restarted with live figures.`,
+            ingestedCount: results.length,
+            liveDemonstrationOf: [
               'Statutory Rails (GSTR-3B & Challan 281 Countdowns)',
               'Obligations View (Fixed Overhead vs Trade Suppliers & Debtor Realities)',
               'Working Capital Cycle (DSO, DIO, DPO, CCC)',
@@ -360,18 +346,37 @@ export async function POST(request: Request) {
     }
 
     // -------------------------------------------------------------------------
-    // B. Multipart/form-data (Manual File Upload from Computer)
+    // B. Multipart/form-data (Manual Single or Bulk File Upload from Computer)
     // -------------------------------------------------------------------------
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
-      const file = formData.get('file') as File | null;
+      const rawFiles = [
+        ...formData.getAll('files'),
+        ...formData.getAll('file'),
+      ].filter((f): f is File => typeof f === 'object' && f !== null && typeof (f as any).arrayBuffer === 'function');
+
+      // Deduplicate files by name and size in case both 'files' and 'file' were supplied
+      const files: File[] = [];
+      const seen = new Set<string>();
+      for (const f of rawFiles) {
+        const key = `${f.name}_${f.size}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          files.push(f);
+        }
+      }
+
+      if (files.length === 0) {
+        return NextResponse.json({ error: 'No file(s) provided in form-data' }, { status: 400 });
+      }
+
       const docType = ((formData.get('documentType') as string) || 'BANK_STATEMENT') as 'BANK_STATEMENT' | 'INVOICE';
       const customVendor = formData.get('counterpartyName') as string | null;
       const customAmount = formData.get('amount') as string | null;
       const subType = (formData.get('subType') as string) || (docType === 'INVOICE' ? 'PAYABLE' : undefined);
 
       let manualMetadata: any = {};
-      if (customVendor || customAmount || subType) {
+      if (files.length === 1 && (customVendor || customAmount || subType)) {
         manualMetadata = {
           counterpartyName: customVendor,
           amount: customAmount ? parseFloat(customAmount) : undefined,
@@ -382,33 +387,92 @@ export async function POST(request: Request) {
           counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
           category: subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL',
         };
+      } else if (subType) {
+        manualMetadata = {
+          type: subType,
+          counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
+          category: subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL',
+        };
       }
 
-      if (!file) {
-        return NextResponse.json({ error: 'No file provided in form-data' }, { status: 400 });
+      const processedResults: Array<{
+        documentId: string;
+        fileName: string;
+        s3Key: string;
+        status: 'success' | 'error';
+        error?: string;
+        pipelineSummary?: any;
+      }> = [];
+
+      for (const file of files) {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const fileBuffer = Buffer.from(arrayBuffer);
+          const fileName = file.name || `upload_${Date.now()}`;
+          const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
+          processedResults.push({
+            documentId: result.documentId,
+            fileName: result.fileName,
+            s3Key: result.s3Key,
+            status: 'success',
+            pipelineSummary: result.pipelineResult?.summary || null,
+          });
+        } catch (err: any) {
+          console.error(`[Ingestion API] Failed to ingest file "${file.name}":`, err);
+          processedResults.push({
+            documentId: '',
+            fileName: file.name,
+            s3Key: '',
+            status: 'error',
+            error: err?.message || String(err),
+          });
+        }
       }
 
-      const arrayBuffer = await file.arrayBuffer();
-      const fileBuffer = Buffer.from(arrayBuffer);
-      const fileName = file.name || `upload_${Date.now()}`;
+      const successCount = processedResults.filter((r) => r.status === 'success').length;
+      const failCount = processedResults.length - successCount;
 
-      const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
+      if (successCount === 0) {
+        return NextResponse.json(
+          {
+            error: 'Failed to process uploaded documents',
+            details: processedResults.map((r) => `${r.fileName}: ${r.error}`).join('; '),
+            results: processedResults,
+          },
+          { status: 500 }
+        );
+      }
+
+      // Re-run cash flow prediction & refresh financial store once for the entire batch
       const freshMetrics = await restartPredictionAndRefreshMetrics({
-        reason: docType === 'BANK_STATEMENT' ? `New Bank Statement Ingested (${fileName})` : `New Invoice/Bill Ingested (${fileName})`,
+        reason:
+          files.length > 1
+            ? `${successCount} Document(s) Ingested in Bulk (${docType})`
+            : docType === 'BANK_STATEMENT'
+            ? `New Bank Statement Ingested (${files[0].name})`
+            : `New Invoice/Bill Ingested (${files[0].name})`,
         sourceDocType: docType,
       });
 
+      const firstSuccess = processedResults.find((r) => r.status === 'success');
+
       return NextResponse.json({
         success: true,
-        documentId: result.documentId,
-        fileName: result.fileName,
-        s3Key: result.s3Key,
+        totalCount: files.length,
+        successCount,
+        failCount,
+        documentId: firstSuccess?.documentId,
+        fileName: firstSuccess?.fileName,
+        s3Key: firstSuccess?.s3Key,
         documentType: docType,
         message:
-          docType === 'BANK_STATEMENT'
-            ? `Successfully processed and recorded bank statement transactions. Cash flow prediction restarted with new balance.`
-            : `Successfully processed and recorded bill/invoice. Cash flow prediction restarted with new commitments.`,
-        pipelineSummary: result.pipelineResult?.summary || null,
+          files.length === 1
+            ? docType === 'BANK_STATEMENT'
+              ? `Successfully processed and recorded bank statement transactions. Cash flow prediction restarted with new balance.`
+              : `Successfully processed and recorded bill/invoice. Cash flow prediction restarted with new commitments.`
+            : `Successfully processed ${successCount} of ${files.length} documents. Cash flow records and predictions have been updated.`,
+        pipelineSummary: firstSuccess?.pipelineSummary || null,
+        results: processedResults,
         predictionSummary: {
           modelName: freshMetrics.mlForecast?.modelName,
           solvencyStatus: freshMetrics.solvencyStatus,
