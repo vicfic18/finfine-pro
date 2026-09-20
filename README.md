@@ -1,52 +1,66 @@
 # FinFine Pro
 
-Helping Indian MSME's make financial decisions. A scalable agentic application powered by AWS.
+## 1. Installation and Setup for Local Development
 
-## Overview
+### Prerequisites
+- **Node.js**: >= 18.19.0 and **npm**
+- **Python**: >= 3.10 and **uv**
+- **AWS CLI**: Installed and configured (`aws configure` / `aws sts get-caller-identity`)
 
-FinFine Pro is built with **Next.js 16 (App Router)** and **AWS Amplify Gen 2** (code-first TypeScript backend).
+### Install Dependencies
+```bash
+# Install root frontend and backend dependencies
+npm install
+
+# Install Python agent backend dependencies
+cd agent_backend
+uv sync
+cd ..
+```
+
+### Environment Configuration
+1. Configure root `.env`:
+   ```bash
+   AWS_REGION=ap-south-1
+   FINFINE_TENANT_ID=msme-001
+   FINFINE_AGENT_RUNTIME_URL=http://127.0.0.1:8080
+   ```
+
+2. Configure agent backend `.env`:
+   ```bash
+   cp agent_backend/env.example agent_backend/.env
+   ```
+   Add your LLM API key (`OPENROUTER_API_KEY` or `GROQ_API_KEY`) and AWS resource details.
+
+### Run Locally
+Start services in separate terminals:
+
+1. **Next.js Frontend**:
+   ```bash
+   npm run dev
+   ```
+   Opens at `http://localhost:3000`.
+
+2. **Agent Backend**:
+   ```bash
+   cd agent_backend
+   uv run uvicorn finfine_agent.api:app --reload --host 127.0.0.1 --port 8080
+   ```
 
 ---
 
-## Prerequisites
+## 2. Commands to Run and Deploy to Amplify Sandbox
 
-- **Node.js** >= 18.19.0 (Node 20+ or 22 recommended) and **npm**
-- **AWS CLI** installed and configured with appropriate permissions:
-  ```bash
-  aws sts get-caller-identity
-  ```
-- **AWS Amplify CLI tool (`ampx`)**: Installed via `npm` dev dependencies and executed via `npx ampx`.
-
----
-
-## Local Development Workflow
-
-Amplify Gen 2 provides cloud-based per-developer **Sandbox environments** that provision real, isolated AWS resources for your development session.
-
-### 1. Start the Amplify Cloud Sandbox
-
-To launch your personal cloud sandbox environment with live watch/hot-reloading of backend resources (`amplify/`):
-
+### Start Cloud Sandbox
+Deploys cloud resources and watches for backend changes:
 ```bash
 npx ampx sandbox
 ```
 
-> **Tip:** If running in non-interactive / automated scripts or if you only want to deploy once without keeping the file watcher open, use:
-> ```bash
-> npx ampx sandbox --once
-> ```
-
-When the sandbox starts successfully:
-1. It deploys your personal cloud stack (Cognito, DynamoDB / AppSync data, etc.) to AWS.
-2. It automatically creates or updates the local `amplify_outputs.json` in the project root.
-3. Keep this terminal running while developing backend resources.
-
-### 2. Run the Next.js Frontend
-
-In a separate terminal, start the Next.js development server:
-
+### Single-Pass Deployment
+Deploys backend resources once without file watching:
 ```bash
-npm run dev
+npx ampx sandbox --once
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -123,85 +137,68 @@ Whenever you save changes in `amplify/`, the running `npx ampx sandbox` process 
 
 Never hardcode credentials or secrets in code or commit them to Git. Store secrets in AWS Systems Manager Parameter Store via `ampx`:
 
-### Set a Secret for Sandbox
+### Manage Sandbox Secrets
 ```bash
+# Set a secret
 npx ampx sandbox secret set <SECRET_NAME>
-```
 
-### List or Remove Sandbox Secrets
-```bash
+# List secrets
 npx ampx sandbox secret list
+
+# Remove a secret
 npx ampx sandbox secret remove <SECRET_NAME>
 ```
 
-### Using Secrets in Backend Code
-```typescript
-import { secret } from '@aws-amplify/backend';
-
-const apiKey = secret('MY_API_KEY');
-```
-
----
-
-## Deleting the Sandbox Environment
-
-When you are done with development or want to clean up your AWS sandbox resources to avoid unnecessary cloud costs:
-
+### Delete Sandbox
+Tears down all sandbox AWS resources:
 ```bash
 npx ampx sandbox delete
 ```
 
 ---
 
-## Connecting the Frontend to Amplify
+## 3. Commands for Generation of Test Data Scripts
 
-Amplify is configured on the client using the generated `amplify_outputs.json` (which is gitignored).
+### Generate Sample PDFs
+Generated files are saved to `sample_data/`.
 
-### Configure in Next.js App Router
-Ensure Amplify is initialized in your root layout or a client configuration component with SSR support enabled:
+- **Generate complete MSME document suite (15 sample PDFs)**:
+  ```bash
+  npx tsx scripts/generate-sample-data.ts
+  ```
+- **Generate 6-month bank statement (380+ transactions)**:
+  ```bash
+  npx tsx scripts/generate-6month-statement.ts
+  ```
+- **Generate single-page UPI statement**:
+  ```bash
+  npx tsx scripts/generate-sample-statement.ts
+  ```
 
-```typescript
-import { Amplify } from 'aws-amplify';
-import outputs from '@/amplify_outputs.json';
-
-Amplify.configure(outputs, { ssr: true });
+### Seed Statutory Tax Rules & Market Calendar
+Populates tax compliance rules and festival demand cycles into DynamoDB:
+```bash
+npm run procure:taxes
 ```
+*(or `npx tsx scripts/procure-tax-rules.ts`)*
 
-### Querying Data
-Generate a type-safe client using the exported `Schema`:
+### Run Pipeline Verification Tests
+- **Full PDF pipeline test (PDF -> S3 -> Extractor -> Normalizer -> DynamoDB)**:
+  ```bash
+  npx tsx scripts/test-canonical-pipeline.ts
+  ```
+- **Asynchronous Step Functions ingestion pipeline test**:
+  ```bash
+  npx tsx scripts/test-ingestion-pipeline.ts
+  ```
 
-```typescript
-// For Client Components:
-'use client';
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '@/amplify/data/resource';
+### Ingest Test Data via Web UI or API
+Direct database seeding is restricted. Ingestion must run through the document pipeline:
 
-const client = generateClient<Schema>();
-
-const { data: items } = await client.models.Todo.list();
-```
-
-For Server Components, use `@aws-amplify/adapter-nextjs/data`:
-```typescript
-import { generateServerClientUsingCookies } from '@aws-amplify/adapter-nextjs/data';
-import { cookies } from 'next/headers';
-import type { Schema } from '@/amplify/data/resource';
-
-const serverClient = generateServerClientUsingCookies<Schema>({
-  config: outputs,
-  cookies,
-});
-```
-
----
-
-## Deployment & CI/CD
-
-Production deployments are driven by AWS Amplify Hosting connected to your Git repository:
-
-1. **amplify_outputs.json:** Generated dynamically in the build pipeline (`npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID`), never committed to Git.
-2. **Branch Secrets:** Set branch-level secrets using:
-   ```bash
-   npx ampx secret set <SECRET_NAME> --branch <BRANCH_NAME> --app-id <APP_ID>
-   ```
-3. **Build Specification:** Configure `amplify.yml` with backend build and frontend Next.js `.next` output artifacts.
+- **Via Web UI**: Open `http://localhost:3000/dashboard/ingestion` and click **"Ingest Complete MSME Suite (14 PDFs)"** or drag and drop sample PDFs.
+- **Via API**:
+  ```bash
+  curl -X POST http://localhost:3000/api/ingestion/upload \
+    -H "Content-Type: application/json" \
+    -d '{"useSample": true, "sampleType": "COMPLETE"}'
+  ```

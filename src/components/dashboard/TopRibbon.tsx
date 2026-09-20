@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 interface TopRibbonProps {
@@ -10,6 +11,8 @@ interface TopRibbonProps {
 }
 
 export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay = 0 }: TopRibbonProps) {
+  const { t } = useTranslation();
+
   // Adjust daysToZero based on simulation if active
   let effectiveDaysToZero = data.daysToZero;
   const effectiveSpendable = Math.max(0, data.spendableLiquidity - simulatedExpense);
@@ -29,7 +32,7 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
       <div className="border-b lg:border-b-0 border-neutral-200 p-4 sm:p-6 lg:p-7 flex flex-col justify-between bg-white">
         <div>
           <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
-            Cash Runway
+            {t('topRibbon.cashRunway', 'Cash Runway')}
           </div>
 
           <div className="flex items-baseline space-x-1.5 sm:space-x-2 mt-3 sm:mt-4">
@@ -38,12 +41,14 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
             }`}>
               {effectiveDaysToZero}
             </span>
-            <span className="text-xs sm:text-sm font-semibold text-neutral-500 uppercase tracking-wider">days left</span>
+            <span className="text-xs sm:text-sm font-semibold text-neutral-500 uppercase tracking-wider">
+              {t('topRibbon.daysLeft', 'days left')}
+            </span>
           </div>
         </div>
 
         <div className="mt-5 text-[11px] text-neutral-400">
-          Zero-cash buffer without new sales
+          {t('topRibbon.zeroCashBufferNote', 'Zero-cash buffer without new sales')}
         </div>
       </div>
 
@@ -51,7 +56,7 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
       <div className="border-b lg:border-b-0 border-neutral-200 p-4 sm:p-6 lg:p-7 flex flex-col justify-between bg-white">
         <div>
           <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
-            Spendable Cash
+            {t('topRibbon.spendableCash', 'Spendable Cash')}
           </div>
 
           <div className="mt-3 sm:mt-4">
@@ -63,17 +68,17 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
 
         <div className="mt-5 space-y-0.5 text-[11px]">
           <div className="flex justify-between text-neutral-500">
-            <span>Tax Lockbox:</span>
+            <span>{t('topRibbon.taxLockbox', 'Tax Lockbox:')}</span>
             <span className="font-medium text-neutral-800 font-display">₹{data.statutoryLockbox.toLocaleString('en-IN')}</span>
           </div>
           {data.minimumCashBuffer > 0 && (
             <div className="flex justify-between text-neutral-500">
-              <span>Safety Buffer:</span>
+              <span>{t('topRibbon.safetyBuffer', 'Safety Buffer:')}</span>
               <span className="font-medium text-neutral-800 font-display">₹{data.minimumCashBuffer.toLocaleString('en-IN')}</span>
             </div>
           )}
           <div className="flex justify-between text-neutral-400">
-            <span>Total Bank:</span>
+            <span>{t('topRibbon.totalBank', 'Total Bank:')}</span>
             <span className="font-medium text-neutral-700">₹{data.totalLiquidBalance.toLocaleString('en-IN')}</span>
           </div>
         </div>
@@ -83,19 +88,21 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
       <div className="p-4 sm:p-6 lg:p-7 flex flex-col justify-between bg-white">
         <div>
           <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
-            Daily Burn
+            {t('topRibbon.dailyBurn', 'Daily Burn')}
           </div>
 
           <div className="flex items-baseline space-x-1.5 mt-3 sm:mt-4">
             <span className="font-display text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-neutral-900 leading-none">
               ₹{data.netDailyBurn.toLocaleString('en-IN')}
             </span>
-            <span className="text-[10px] sm:text-xs text-neutral-400 font-medium">/day</span>
+            <span className="text-[10px] sm:text-xs text-neutral-400 font-medium">
+              {t('topRibbon.perDay', '/day')}
+            </span>
           </div>
         </div>
 
         <div className="mt-5 flex items-center justify-between text-[11px] text-neutral-500">
-          <span>Monthly:</span>
+          <span>{t('topRibbon.monthly', 'Monthly:')}</span>
           <span className="font-semibold text-neutral-900 font-display">
             ₹{(data.netDailyBurn * 30).toLocaleString('en-IN')}
           </span>
@@ -106,7 +113,7 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
       <div className="p-4 sm:p-6 lg:p-7 flex flex-col justify-between bg-white">
         <div>
           <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">
-            15-Day Coverage
+            {t('topRibbon.fifteenDayCoverage', '15-Day Coverage')}
           </div>
 
           <div className="flex items-baseline space-x-1.5 sm:space-x-2 mt-3 sm:mt-4">
@@ -120,13 +127,13 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
 
         <div className="mt-5 space-y-0.5 text-[11px]">
           <div className="flex justify-between text-neutral-500">
-            <span>Inflows:</span>
+            <span>{t('topRibbon.inflowsNext15', 'Inflows:')}</span>
             <span className="font-medium text-neutral-800">
               ₹{(data.totalLiquidBalance + data.inflowsNext15Days).toLocaleString('en-IN')}
             </span>
           </div>
           <div className="flex justify-between text-neutral-400">
-            <span>Due Bills:</span>
+            <span>{t('topRibbon.dueBills', 'Due Bills:')}</span>
             <span className={`font-medium ${isShortfall ? 'text-orange-600 font-semibold' : 'text-neutral-700'}`}>
               ₹{data.commitmentsNext15Days.toLocaleString('en-IN')}
             </span>
@@ -137,3 +144,4 @@ export default function TopRibbon({ data, simulatedExpense = 0, simulatedDelay =
     </div>
   );
 }
+

@@ -142,6 +142,14 @@ const normalizerTables = [
   expectedReceivableTable,
 ];
 
+const agentTables = [
+  ...normalizerTables,
+  inventorySnapshotTable,
+  inventoryItemTable,
+  purchaseOrderTable,
+  purchaseOrderLineItemTable,
+];
+
 for (const tbl of normalizerTables) {
   tbl.grantReadWriteData(backend.ingestionNormalizer.resources.lambda);
 }
@@ -303,7 +311,7 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
 });
 
 // Grant read permissions on all canonical tables to agent
-for (const tbl of normalizerTables) {
+for (const tbl of agentTables) {
   tbl.grantReadData(agentLambda);
 }
 
@@ -366,6 +374,10 @@ backend.addOutput({
     merchantOnboardingTableName: onboardingTable.tableName,
     merchantFieldConfirmationTableName: fieldConfirmationTable.tableName,
     expectedReceivableTableName: expectedReceivableTable.tableName,
+    inventorySnapshotTableName: inventorySnapshotTable.tableName,
+    inventoryItemTableName: inventoryItemTable.tableName,
+    purchaseOrderTableName: purchaseOrderTable.tableName,
+    purchaseOrderLineItemTableName: purchaseOrderLineItemTable.tableName,
     agentSessionBucketName: backend.storage.resources.bucket.bucketName,
     agentSessionPrefix,
     agentSessionRetentionDays,

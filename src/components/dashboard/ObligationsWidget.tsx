@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Clock } from 'lucide-react';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
@@ -9,6 +10,7 @@ interface ObligationsWidgetProps {
 }
 
 export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
+  const { t } = useTranslation();
   const { fixedObligationsTotal, variableObligationsTotal, fixedPercentageOfExpectedInflow, workingCapitalCycle, debtorsReliability } = data;
   const totalCommitments = fixedObligationsTotal + variableObligationsTotal;
   const fixedShare = totalCommitments > 0 ? Math.round((fixedObligationsTotal / totalCommitments) * 100) : 0;
@@ -21,15 +23,15 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
         <div className="flex items-baseline justify-between pb-3 border-b border-neutral-100">
           <div>
             <h3 className="font-display font-bold text-xl text-neutral-900">
-              Monthly Commitments
+              {t('obligations.monthlyCommitments', 'Monthly Commitments')}
             </h3>
             <p className="text-xs text-neutral-500 mt-0.5">
-              Fixed costs vs flexible supplier payments
+              {t('obligations.commitmentsSubtitle', 'Fixed costs vs flexible supplier payments')}
             </p>
           </div>
           {fixedPercentageOfExpectedInflow > 0 && (
             <span className="text-xs font-semibold text-neutral-700 bg-neutral-100 px-2.5 py-1">
-              {fixedPercentageOfExpectedInflow}% of Inflow
+              {t('obligations.ofInflow', { pct: fixedPercentageOfExpectedInflow, defaultValue: `${fixedPercentageOfExpectedInflow}% of Inflow` })}
             </span>
           )}
         </div>
@@ -37,8 +39,8 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
         {/* Linear Meter */}
         <div className="mt-4">
           <div className="flex justify-between text-xs font-medium text-neutral-600 mb-1.5">
-            <span>Fixed: {fixedShare}%</span>
-            <span>Flexible: {totalCommitments > 0 ? 100 - fixedShare : 0}%</span>
+            <span>{t('obligations.fixed', 'Fixed:')} {fixedShare}%</span>
+            <span>{t('obligations.flexible', 'Flexible:')} {totalCommitments > 0 ? 100 - fixedShare : 0}%</span>
           </div>
           <div className="w-full h-2 bg-neutral-100 flex">
             <div
@@ -53,19 +55,27 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
 
           <div className="grid grid-cols-2 divide-x divide-neutral-200 border-y border-neutral-100 mt-4 py-3">
             <div className="pr-4">
-              <span className="text-xs font-medium text-neutral-400 block uppercase tracking-wider">Fixed Commitments</span>
+              <span className="text-xs font-medium text-neutral-400 block uppercase tracking-wider">
+                {t('obligations.fixedCommitments', 'Fixed Commitments')}
+              </span>
               <div className="font-display text-2xl sm:text-3xl font-bold text-neutral-900 mt-1">
                 ₹{fixedObligationsTotal.toLocaleString('en-IN')}
               </div>
-              <div className="text-[11px] text-neutral-400 mt-0.5">Rent, Salaries, EMIs</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">
+                {t('obligations.fixedCommitmentsSub', 'Rent, Salaries, EMIs')}
+              </div>
             </div>
 
             <div className="pl-4">
-              <span className="text-xs font-medium text-neutral-400 block uppercase tracking-wider">Flexible Bills</span>
+              <span className="text-xs font-medium text-neutral-400 block uppercase tracking-wider">
+                {t('obligations.flexibleBills', 'Flexible Bills')}
+              </span>
               <div className="font-display text-2xl sm:text-3xl font-bold text-neutral-800 mt-1">
                 ₹{variableObligationsTotal.toLocaleString('en-IN')}
               </div>
-              <div className="text-[11px] text-neutral-400 mt-0.5">Trade Suppliers</div>
+              <div className="text-[11px] text-neutral-400 mt-0.5">
+                {t('obligations.flexibleBillsSub', 'Trade Suppliers')}
+              </div>
             </div>
           </div>
         </div>
@@ -76,34 +86,40 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
         <div className="flex items-baseline justify-between pb-3 border-b border-neutral-100">
           <div>
             <h3 className="font-display font-bold text-xl text-neutral-900">
-              Cash Cycle
+              {t('obligations.cashCycle', 'Cash Cycle')}
             </h3>
             <p className="text-xs text-neutral-500 mt-0.5">
-              Working capital turnaround velocity
+              {t('obligations.cashCycleSubtitle', 'Working capital turnaround velocity')}
             </p>
           </div>
           <div className="flex items-baseline space-x-1">
             <span className="font-display font-bold text-3xl text-neutral-900">
               {workingCapitalCycle.ccc}
             </span>
-            <span className="text-xs text-neutral-500">days</span>
+            <span className="text-xs text-neutral-500">{t('common.days', 'days')}</span>
           </div>
         </div>
 
         {/* Formula breakdown */}
         <div className="grid grid-cols-3 divide-x divide-neutral-200 border-b border-neutral-100 py-3 text-center">
           <div className="px-2">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">Customer Credit</span>
+            <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">
+              {t('obligations.customerCredit', 'Customer Credit')}
+            </span>
             <span className="font-bold text-lg font-display text-neutral-900">{workingCapitalCycle.dso}d</span>
             <span className="text-[10px] text-neutral-400 block">DSO</span>
           </div>
           <div className="px-2">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">Inventory</span>
+            <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">
+              {t('obligations.inventory', 'Inventory')}
+            </span>
             <span className="font-bold text-lg font-display text-neutral-900">{workingCapitalCycle.dio}d</span>
             <span className="text-[10px] text-neutral-400 block">DIO</span>
           </div>
           <div className="px-2">
-            <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">Supplier Credit</span>
+            <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">
+              {t('obligations.supplierCredit', 'Supplier Credit')}
+            </span>
             <span className="font-bold text-lg font-display text-neutral-900">-{workingCapitalCycle.dpo}d</span>
             <span className="text-[10px] text-neutral-400 block">DPO</span>
           </div>
@@ -115,17 +131,17 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
         <div className="flex items-baseline justify-between pb-3 border-b border-neutral-100">
           <div>
             <h3 className="font-display font-bold text-xl text-neutral-900">
-              Debtor Realities
+              {t('obligations.debtorRealities', 'Debtor Realities')}
             </h3>
             <p className="text-xs text-neutral-500 mt-0.5">
-              Expected settlement dates based on customer invoices
+              {t('obligations.debtorSubtitle', 'Expected settlement dates based on customer invoices')}
             </p>
           </div>
         </div>
 
         {debtorsReliability.length === 0 ? (
           <div className="py-6 text-center text-xs text-neutral-400">
-            No customer invoice receivables currently tracked.
+            {t('obligations.noDebtors', 'No customer invoice receivables currently tracked.')}
           </div>
         ) : (
           <div className="divide-y divide-neutral-100">
@@ -135,12 +151,14 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
                   <div className="flex items-center space-x-2">
                     <span className="font-bold text-sm text-neutral-900">{debtor.name}</span>
                     <span className="text-[10px] text-neutral-400 uppercase tracking-wider">
-                      {debtor.concentrationPercentage}% share
+                      {debtor.concentrationPercentage}% {t('obligations.share', 'share')}
                     </span>
                   </div>
                   <div className="text-[11px] text-neutral-500 flex items-center space-x-1.5">
                     <Clock size={11} className="text-neutral-400" />
-                    <span>Delay: +{debtor.averageDelayDays}d • Est: {debtor.expectedRealisticDate}</span>
+                    <span>
+                      {t('obligations.delay', 'Delay:')} +{debtor.averageDelayDays}d • {t('obligations.est', 'Est:')} {debtor.expectedRealisticDate}
+                    </span>
                   </div>
                 </div>
 
@@ -151,7 +169,7 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
                   <div className={`text-[11px] font-semibold ${
                     debtor.reliabilityScore >= 80 ? 'text-emerald-700' : debtor.reliabilityScore >= 60 ? 'text-amber-700' : 'text-rose-700'
                   }`}>
-                    {debtor.reliabilityScore}% Score
+                    {debtor.reliabilityScore}% {t('obligations.score', 'Score')}
                   </div>
                 </div>
               </div>
@@ -163,3 +181,4 @@ export default function ObligationsWidget({ data }: ObligationsWidgetProps) {
     </div>
   );
 }
+

@@ -6,6 +6,13 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import outputs from '../../amplify_outputs.json';
+import { predictCashFlow } from './sagemaker-forecast-client';
+import { getUpcomingIndianMilestones } from './indian-financial-calendar';
+import {
+  getMerchantTaxProfile,
+  getTaxComplianceRules,
+  getMarketCalendarEvents,
+} from './tax-compliance-store';
 
 type AmplifyOutputs = {
   auth?: { aws_region?: string };
@@ -83,6 +90,10 @@ export interface MerchantSettings {
   gstin?: string;
   pan?: string;
   category?: string;
+  businessSector?: string;
+  enabledFestivals?: string[];
+  festivalMultipliers?: Record<string, number>;
+  enableWeekendSurge?: boolean;
   minimumCashBuffer: number;
   bufferRuleType?: string;
   defaultForecastHorizonDays?: number;
@@ -121,14 +132,43 @@ export interface FinancialMetricData {
   trajectory60Days: Array<{
     day: number;
     date: string;
+    isHistorical?: boolean;
+    isAnchor?: boolean;
+    actualBalance?: number;
+    predictedBalance?: number;
     baseBalance: number;
     optimisticBalance: number;
     conservativeBalance: number;
+    p10Balance?: number;
+    p50Balance?: number;
+    p90Balance?: number;
     netDelta: number;
     inflow: number;
     outflow: number;
     events: string[];
+    festivals?: string[];
+    statutoryDrain?: string;
+    inflowMultiplier?: number;
   }>;
+  mlForecast?: {
+    modelName: string;
+    engine: string;
+    festiveUpliftInr: number;
+    statutoryTaxDrainInr: number;
+    confidenceInterval: {
+      p10MinBalance: number;
+      p50MinBalance: number;
+      p90MaxBalance: number;
+    };
+    upcomingMilestones: Array<{
+      date: string;
+      dayOffset: number;
+      type: 'FESTIVAL' | 'MEGA_SALE' | 'STATUTORY_TAX';
+      title: string;
+      expectedImpact: string;
+      recommendedAction: string;
+    }>;
+  };
   pinchPoints: Array<{
     date: string;
     dayNum: number;
@@ -194,6 +234,15 @@ export interface FinancialMetricData {
   }>;
 }
 
+// Default list of enabled festivals (core retail festivals enabled; wedding surge disabled by default so businesses choose it)
+export const DEFAULT_ENABLED_FESTIVALS = [
+  'mkt-mega-sales-2026',
+  'mkt-navratri-2026',
+  'mkt-dussehra-2026',
+  'mkt-dhanteras-2026',
+  'mkt-diwali-2026',
+];
+
 // In-memory fallback for settings if table is uninitialized
 const localSettingsStore: Record<string, MerchantSettings> = {};
 
@@ -220,6 +269,10 @@ export async function getMerchantSettings(targetTenantId: string): Promise<Merch
         gstin: item.gstin || '',
         pan: item.pan || '',
         category: item.category || 'Retail & Distribution',
+        businessSector: item.businessSector || item.category || 'Retail & Distribution',
+        enabledFestivals: Array.isArray(item.enabledFestivals) ? item.enabledFestivals : DEFAULT_ENABLED_FESTIVALS,
+        festivalMultipliers: typeof item.festivalMultipliers === 'object' && item.festivalMultipliers !== null ? item.festivalMultipliers : {},
+        enableWeekendSurge: item.enableWeekendSurge !== false,
         minimumCashBuffer: Number(item.minimumCashBuffer ?? 10000),
         bufferRuleType: item.bufferRuleType || 'ABSOLUTE_INR',
         defaultForecastHorizonDays: Number(item.defaultForecastHorizonDays ?? 60),
@@ -238,6 +291,10 @@ export async function getMerchantSettings(targetTenantId: string): Promise<Merch
       gstin: '',
       pan: '',
       category: 'Retail & Distribution',
+      businessSector: 'Retail & Distribution',
+      enabledFestivals: DEFAULT_ENABLED_FESTIVALS,
+      festivalMultipliers: {},
+      enableWeekendSurge: true,
       minimumCashBuffer: 10000,
       bufferRuleType: 'ABSOLUTE_INR',
       defaultForecastHorizonDays: 60,
@@ -365,12 +422,44 @@ export async function fetchDashboardData(options?: {
   return freshMetrics;
 }
 
+/**
+ * Invalidate cache and immediately re-trigger prediction / recompute financial metrics.
+ * Ensures that whenever new bank statements or documents are ingested, or tenant data is deleted/reset,
+ * the prediction pipeline is immediately restarted and fresh forecasts are ready in cache.
+ */
+export async function restartPredictionAndRefreshMetrics(options: {
+  reason?: string;
+  sourceDocType?: string;
+  tenantId: string;
+}): Promise<FinancialMetricData> {
+  if (!options.tenantId?.trim()) throw new Error('A request-scoped tenant is required.');
+  invalidateDashboardCache();
+  const reasonStr = options?.reason || 'Lifecycle Trigger';
+  const docTypeStr = options?.sourceDocType ? ` [DocType: ${options.sourceDocType}]` : '';
+  console.log(`[Prediction Lifecycle] Cache invalidated. Restarting cash flow prediction (${reasonStr}${docTypeStr}) for tenant: ${options.tenantId}...`);
+
+  const freshMetrics = await fetchDashboardData({ forceRefresh: true, tenantId: options.tenantId });
+
+  console.log(
+    `[Prediction Lifecycle] Prediction successfully restarted! Model: ${freshMetrics.mlForecast?.modelName || 'Chronos-Bolt Quantile Ensemble'}, Solvency: ${freshMetrics.solvencyStatus}, DaysToZero: ${freshMetrics.daysToZero}, Trajectory Points: ${freshMetrics.trajectory60Days?.length || 0}`
+  );
+  return freshMetrics;
+}
+
 export async function computeDashboardMetrics(targetTenantId?: string): Promise<FinancialMetricData> {
   if (!targetTenantId?.trim()) throw new Error('A request-scoped tenant is required.');
-  // Fetch merchant settings for business name & rules
-  const settings = await getMerchantSettings(targetTenantId);
+  // Fetch merchant settings and catalogs for business name, rules, and forecasts.
+  const [settings, taxProfile, taxRulesCatalog, marketEventsCatalog] = await Promise.all([
+    getMerchantSettings(targetTenantId),
+    getMerchantTaxProfile(targetTenantId),
+    getTaxComplianceRules(),
+    getMarketCalendarEvents(),
+  ]);
   const businessName = settings.businessName || 'My Business';
   const minimumCashBuffer = Number(settings.minimumCashBuffer ?? 0);
+  const activeTaxRules = taxRulesCatalog.filter((r) =>
+    taxProfile.selectedRuleCodes?.includes(r.ruleCode)
+  );
 
   let documents: LedgerRecord[] = [];
   let transactions: LedgerRecord[] = [];
@@ -516,7 +605,10 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
   const pfAmount = obligations
     .filter((o) => (o.title || '').toLowerCase().includes('epfo') || (o.title || '').toLowerCase().includes('esic'))
     .reduce((sum, o) => sum + Number(o.amount || 0), 0);
-  const statutoryTotal = gstAmount + tdsAmount + pfAmount;
+  const advanceTaxAmount = statutoryObligations
+    .filter((o) => (o.title || '').toLowerCase().includes('advance tax'))
+    .reduce((sum, o) => sum + Number(o.amount || 0), 0);
+  const statutoryTotal = gstAmount + tdsAmount + pfAmount + advanceTaxAmount;
 
   // Spendable liquidity
   const spendableLiquidity = Math.max(0, totalBalance - statutoryTotal - minimumCashBuffer);
@@ -595,9 +687,155 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
   let zeroBreached = totalBalance <= 0;
   let bufferBreached = totalBalance < minimumCashBuffer;
 
-  const trajectory60Days: FinancialMetricData['trajectory60Days'] = [];
+  // ML Probabilistic Forecast via AWS SageMaker / Chronos-Bolt Quantile Ensemble
+  const historyPoints = transactions.map((t) => ({
+    date: t.date || asOfDate,
+    inflow: t.type === 'INFLOW' ? Number(t.amount || 0) : 0,
+    outflow: t.type === 'OUTFLOW' ? Number(t.amount || 0) : 0,
+    net: (t.type === 'INFLOW' ? 1 : -1) * Number(t.amount || 0),
+    balance: t.balanceAfterTransaction ? Number(t.balanceAfterTransaction) : undefined,
+  }));
 
-  for (let i = 1; i <= 60; i++) {
+  const mlForecastResult = await predictCashFlow({
+    history: historyPoints,
+    startingBalance: totalBalance,
+    horizonDays: 60,
+    asOfDate,
+    minimumCashBuffer,
+    recurrentObligations: obligations.map((o) => ({
+      title: o.title || '',
+      dueDate: o.dueDate,
+      amount: Number(o.amount || 0),
+      type: o.type,
+      category: o.category,
+      isStatutory: o.isStatutory,
+    })),
+    indianContextEnabled: true,
+    enabledFestivals: settings.enabledFestivals,
+    customMultipliers: settings.festivalMultipliers,
+    enableWeekendSurge: settings.enableWeekendSurge,
+    festivals: marketEventsCatalog,
+    taxRules: activeTaxRules,
+  });
+
+  // Reconstruct 60-Day Historical Actuals from verified ledger transactions
+  const historyWindowDays = 60;
+  const historicalPoints: FinancialMetricData['trajectory60Days'] = [];
+
+  const histDayData: Array<{
+    dateStr: string;
+    dayOffset: number;
+    inflow: number;
+    outflow: number;
+    netDelta: number;
+    events: string[];
+    explicitBalance?: number;
+  }> = [];
+
+  for (let i = historyWindowDays; i >= 1; i--) {
+    const d = new Date(baseAsOf);
+    d.setDate(baseAsOf.getDate() - i);
+    const dStr = d.toISOString().slice(0, 10);
+    const dayTxns = transactions.filter((t) => t.date === dStr);
+
+    const dayIn = dayTxns
+      .filter((t) => t.type === 'INFLOW')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const dayOut = dayTxns
+      .filter((t) => t.type === 'OUTFLOW')
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+    const validBal = dayTxns
+      .filter((t) => t.balanceAfterTransaction != null)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+    const events = dayTxns.map(
+      (t) =>
+        `${(t.counterpartyName || t.description || 'Transaction').slice(0, 24)} (₹${Number(t.amount || 0).toLocaleString('en-IN')})`
+    );
+
+    histDayData.push({
+      dateStr: dStr,
+      dayOffset: -i,
+      inflow: dayIn,
+      outflow: dayOut,
+      netDelta: dayIn - dayOut,
+      events,
+      explicitBalance: validBal.length > 0 ? Number(validBal[0].balanceAfterTransaction) : undefined,
+    });
+  }
+
+  // Backtrack daily balances from totalBalance at asOfDate
+  const asOfTxns = transactions.filter((t) => t.date === asOfDate);
+  const asOfInflow = asOfTxns
+    .filter((t) => t.type === 'INFLOW')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const asOfOutflow = asOfTxns
+    .filter((t) => t.type === 'OUTFLOW')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  const asOfDelta = asOfInflow - asOfOutflow;
+
+  let currBacktrackedBalance = totalBalance - asOfDelta;
+  const historicalBalances: number[] = new Array(historyWindowDays);
+  for (let idx = histDayData.length - 1; idx >= 0; idx--) {
+    const item = histDayData[idx];
+    if (item.explicitBalance !== undefined) {
+      historicalBalances[idx] = item.explicitBalance;
+      currBacktrackedBalance = item.explicitBalance - item.netDelta;
+    } else {
+      historicalBalances[idx] = Math.max(0, currBacktrackedBalance);
+      currBacktrackedBalance = Math.max(0, currBacktrackedBalance - item.netDelta);
+    }
+  }
+
+  for (let idx = 0; idx < histDayData.length; idx++) {
+    const item = histDayData[idx];
+    const bal = Math.round(historicalBalances[idx]);
+    historicalPoints.push({
+      day: item.dayOffset,
+      date: item.dateStr,
+      isHistorical: true,
+      isAnchor: false,
+      actualBalance: bal,
+      predictedBalance: undefined,
+      baseBalance: bal,
+      optimisticBalance: bal,
+      conservativeBalance: bal,
+      netDelta: Math.round(item.netDelta),
+      inflow: Math.round(item.inflow),
+      outflow: Math.round(item.outflow),
+      events: item.events,
+    });
+  }
+
+  // Anchor Point: As-Of Date (Today)
+  const anchorPoint: FinancialMetricData['trajectory60Days'][0] = {
+    day: 0,
+    date: asOfDate,
+    isHistorical: false,
+    isAnchor: true,
+    actualBalance: Math.round(totalBalance),
+    predictedBalance: Math.round(totalBalance),
+    baseBalance: Math.round(totalBalance),
+    optimisticBalance: Math.round(totalBalance),
+    conservativeBalance: Math.round(totalBalance),
+    p10Balance: Math.round(totalBalance),
+    p50Balance: Math.round(totalBalance),
+    p90Balance: Math.round(totalBalance),
+    netDelta: Math.round(asOfDelta),
+    inflow: Math.round(asOfInflow),
+    outflow: Math.round(asOfOutflow),
+    events: asOfTxns.map(
+      (t) =>
+        `${(t.counterpartyName || t.description || 'Transaction').slice(0, 24)} (₹${Number(t.amount || 0).toLocaleString('en-IN')})`
+    ),
+  };
+
+  // Roll out 60-Day Future Forecast (providing a balanced 60D Past / 60D Future 50-50 split)
+  const futurePoints: FinancialMetricData['trajectory60Days'] = [];
+  const forecastHorizon = 60;
+
+  for (let i = 1; i <= forecastHorizon; i++) {
     const simDate = new Date(baseAsOf);
     simDate.setDate(baseAsOf.getDate() + i);
     const dateStr = simDate.toISOString().slice(0, 10);
@@ -631,18 +869,36 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
       zeroBreached = true;
     }
 
-    trajectory60Days.push({
+    const mlPoint = mlForecastResult.dailyForecasts[i - 1];
+
+    futurePoints.push({
       day: i,
       date: dateStr,
+      isHistorical: false,
+      isAnchor: false,
+      actualBalance: undefined,
+      predictedBalance: mlPoint ? mlPoint.p50Balance : Math.round(runningBalance),
       baseBalance: Math.round(runningBalance),
       optimisticBalance: Math.round(runningBalance + (dayInflows > 0 ? dayInflows * 0.1 : 0)),
       conservativeBalance: Math.round(runningBalance - (dayOutflows > 0 ? dayOutflows * 0.1 : 0)),
+      p10Balance: mlPoint ? mlPoint.p10Balance : Math.round(runningBalance * 0.9),
+      p50Balance: mlPoint ? mlPoint.p50Balance : Math.round(runningBalance),
+      p90Balance: mlPoint ? mlPoint.p90Balance : Math.round(runningBalance * 1.1),
       netDelta: Math.round(delta),
       inflow: Math.round(totalIn),
       outflow: Math.round(totalOut),
       events: eventNames,
+      festivals: mlPoint?.activeFestivals || [],
+      statutoryDrain: mlPoint?.statutoryDrainTitle,
+      inflowMultiplier: mlPoint?.inflowMultiplier || 1.0,
     });
   }
+
+  const trajectory60Days: FinancialMetricData['trajectory60Days'] = [
+    ...historicalPoints,
+    anchorPoint,
+    ...futurePoints,
+  ];
 
   // Solvency classification
   const solvencyStatus: FinancialMetricData['solvencyStatus'] =
@@ -803,19 +1059,25 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
     });
   }
 
-  // Statutory Compliance list from real statutory obligations
+  // Statutory Compliance list from real statutory obligations and active tax rules
   const statutoryCompliance: FinancialMetricData['statutoryCompliance'] = [];
   for (const stat of statutoryObligations) {
     const dueDate = stat.dueDate ? new Date(stat.dueDate) : baseAsOf;
     const daysLeft = Math.max(0, Math.round((dueDate.getTime() - baseAsOf.getTime()) / (1000 * 3600 * 24)));
+    const matchedRule = taxRulesCatalog.find(
+      (r) =>
+        (stat.title || '').toLowerCase().includes(r.title.toLowerCase()) ||
+        (stat.documentId && stat.documentId.includes(r.ruleCode))
+    );
+
     statutoryCompliance.push({
-      taxName: stat.title || 'Tax Payment',
-      form: stat.category === 'GST_PAYMENT' ? 'GSTR-3B' : stat.category === 'TDS_PAYMENT' ? 'Challan 281' : 'Tax Form',
+      taxName: stat.title || 'Statutory Obligation',
+      form: matchedRule?.form || (stat.category === 'GST_PAYMENT' ? 'GSTR-3B' : stat.category === 'TDS_PAYMENT' ? 'Challan 281' : 'Tax Form'),
       dueDate: stat.dueDate || asOfDate,
       daysLeft,
       amountDue: Number(stat.amount || 0),
       status: daysLeft <= 3 ? 'Urgent' : 'Upcoming',
-      penaltyIfMissedDaily: stat.penaltyRatePerDay ? `₹${stat.penaltyRatePerDay}/day` : 'Standard statutory interest',
+      penaltyIfMissedDaily: stat.penaltyRatePerDay ? `₹${stat.penaltyRatePerDay}/day` : matchedRule?.penaltyClauses || 'Standard statutory interest',
     });
   }
 
@@ -831,7 +1093,7 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
       gst: gstAmount,
       tds: tdsAmount,
       pfEsic: pfAmount,
-      advanceTax: 0,
+      advanceTax: advanceTaxAmount,
     },
     netDailyBurn,
     daysToZero,
@@ -850,5 +1112,23 @@ export async function computeDashboardMetrics(targetTenantId?: string): Promise<
     paymentRailSavings,
     discountArbitrage,
     statutoryCompliance,
+    mlForecast: {
+      modelName: mlForecastResult.modelName,
+      engine: mlForecastResult.engine,
+      festiveUpliftInr: mlForecastResult.festiveUpliftTotalInr,
+      statutoryTaxDrainInr: mlForecastResult.statutoryTaxDrainTotalInr,
+      confidenceInterval: {
+        p10MinBalance: mlForecastResult.solvencySummary.minimumP10Balance,
+        p50MinBalance: mlForecastResult.solvencySummary.minimumP50Balance,
+        p90MaxBalance: Math.max(...mlForecastResult.dailyForecasts.map((f) => f.p90Balance)),
+      },
+      upcomingMilestones: getUpcomingIndianMilestones(asOfDate, 60, {
+        festivals: marketEventsCatalog,
+        taxRules: activeTaxRules,
+        enabledFestivals: settings.enabledFestivals,
+        customMultipliers: settings.festivalMultipliers,
+        enableWeekendSurge: settings.enableWeekendSurge,
+      }),
+    },
   };
 }

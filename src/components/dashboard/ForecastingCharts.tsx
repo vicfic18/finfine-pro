@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -12,6 +13,7 @@ import {
   ReferenceLine,
   CartesianGrid,
 } from 'recharts';
+import { Calendar } from 'lucide-react';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 interface ForecastingChartsProps {
@@ -20,135 +22,317 @@ interface ForecastingChartsProps {
   simulatedDelay?: number;
 }
 
-type TrajectoryPoint = FinancialMetricData['trajectory60Days'][number];
-type ChartClickState = { activePayload?: Array<{ payload?: TrajectoryPoint }> };
-
 export default function ForecastingCharts({
   data,
   simulatedExpense = 0,
   simulatedDelay = 0,
 }: ForecastingChartsProps) {
+  const { t } = useTranslation();
   const trajectory = Array.isArray(data?.trajectory60Days) ? data.trajectory60Days : [];
-  const [selectedDay, setSelectedDay] = useState<TrajectoryPoint | null>(
-    trajectory[3] || trajectory[0] || null
+  const asOfDate = data?.asOfDate || new Date().toISOString().slice(0, 10);
+
+  // Find index of the anchor date or first future point for default selection
+  const defaultSelectionIndex = Math.max(
+    0,
+    trajectory.findIndex((pt) => pt.date === asOfDate || pt.day === 0)
   );
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number>(defaultSelectionIndex);
 
-  // Recalculate chart points if simulation sliders are adjusted
+  // Map trajectory points into chart data separating historical actuals from future predictions
   const chartData = trajectory.map((pt) => {
-    let adjBase = pt.baseBalance;
-    let adjOpt = pt.optimisticBalance;
-    let adjCons = pt.conservativeBalance;
+    const isPast = pt.isHistorical === true;
+    const isAnchor = pt.isAnchor === true || pt.date === asOfDate || pt.day === 0;
 
-    if (simulatedExpense > 0) {
-      adjBase -= simulatedExpense;
-      adjOpt -= simulatedExpense;
-      adjCons -= simulatedExpense;
-    }
-    if (simulatedDelay > 0 && pt.day >= 7) {
-      adjBase -= simulatedDelay * 4000;
-      adjOpt -= simulatedDelay * 2000;
-      adjCons -= simulatedDelay * 6000;
+    // Actual bank ledger balance (populated only for historical and anchor points)
+    const actualBal = isPast || isAnchor
+      ? (pt.actualBalance ?? pt.baseBalance ?? 0)
+      : undefined;
+
+    // SageMaker predicted balance (populated only for anchor and future points)
+    let predExpected = isAnchor
+      ? (pt.actualBalance ?? pt.baseBalance ?? 0)
+      : (pt.predictedBalance ?? pt.p50Balance ?? pt.baseBalance ?? 0);
+
+    let predUpper = isAnchor
+      ? predExpected
+      : (pt.p90Balance ?? pt.optimisticBalance ?? predExpected);
+
+    let predLower = isAnchor
+      ? predExpected
+      : (pt.p10Balance ?? pt.conservativeBalance ?? predExpected);
+
+    // Apply what-if simulation adjustments only to future dates
+    if (!isPast && !isAnchor) {
+      if (simulatedExpense > 0) {
+        predExpected -= simulatedExpense;
+        predUpper -= simulatedExpense;
+        predLower -= simulatedExpense;
+      }
+      if (simulatedDelay > 0 && pt.day >= 7) {
+        predExpected -= simulatedDelay * 4000;
+        predUpper -= simulatedDelay * 2000;
+        predLower -= simulatedDelay * 6000;
+      }
     }
 
     return {
       ...pt,
-      baseBalance: adjBase,
-      optimisticBalance: adjOpt,
-      conservativeBalance: adjCons,
+      isPast,
+      isAnchor,
+      actualBalance: actualBal,
+      predictedBalance: isPast ? undefined : Math.round(predExpected),
+      displayUpper: isPast ? undefined : Math.round(predUpper),
+      displayLower: isPast ? undefined : Math.round(predLower),
+      hasFestival: (pt.festivals && pt.festivals.length > 0) || false,
+      hasStatutory: !!pt.statutoryDrain,
     };
   });
+
+  const selectedDay = chartData[selectedDayIndex] || chartData[defaultSelectionIndex] || null;
 
   return (
     <div className="w-full bg-white divide-y divide-neutral-200">
       
-      {/* Header Cell */}
-      <div className="p-4 sm:p-6 bg-white">
-        <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block mb-1">
-          Projection • 60-Day Horizon
-        </span>
-        <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-          Cash Flow Trajectory
-        </h2>
+      {/* 1. Header Cell: AI Forecast & Anchor Date */}
+      <div className="p-4 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-2 mb-1">
+            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
+              {t('charts.projectionHorizon', 'Historical Actuals (Left) • AI Predictions (Right)')}
+            </span>
+            <span className="text-neutral-300">•</span>
+            <span className="inline-flex items-center text-[10.5px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
+              AI Forecast • Live
+            </span>
+          </div>
+          <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
+            {t('charts.cashFlowTrajectory', 'Cash Flow Trajectory')}
+          </h2>
+        </div>
+
+        {/* Current Anchor / Today Indicator */}
+        <div className="flex items-center space-x-3 self-start sm:self-auto bg-neutral-50 px-3 py-2 border border-neutral-200">
+          <Calendar className="w-4 h-4 text-neutral-500" />
+          <div className="text-left">
+            <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider block">
+              Today (As-Of Date)
+            </span>
+            <span className="font-mono text-xs font-bold text-neutral-900">
+              {asOfDate}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Trajectory Line Chart Cell */}
+      {/* 2. Trajectory Line Chart Cell */}
       <div className="p-4 sm:p-6 bg-white">
-        {/* Chart Header Info */}
+        {/* Chart Header Info / Legend */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-4 text-xs">
-          <div className="flex items-center space-x-5">
+          <div className="flex items-center flex-wrap gap-x-5 gap-y-2">
+            {/* Left Half Legend */}
             <div className="flex items-center space-x-2">
-              <span className="w-3 h-0.5 bg-neutral-900 inline-block" />
-              <span className="text-neutral-700 font-medium">Expected Balance</span>
+              <span className="w-3.5 h-0.5 bg-neutral-900 inline-block" />
+              <span className="text-neutral-800 font-medium">
+                Historical Bank Ledger (Actuals)
+              </span>
             </div>
+
+            {/* Anchor Marker Legend */}
             <div className="flex items-center space-x-2">
-              <span className="w-3 h-3 bg-neutral-200 inline-block" />
-              <span className="text-neutral-500">Confidence Band</span>
+              <span className="w-3.5 h-0.5 bg-blue-600 border-t border-dashed border-blue-600 inline-block" />
+              <span className="text-blue-700 font-medium">
+                Today (As-Of Reference)
+              </span>
             </div>
+
+            {/* Right Half Legend */}
+            <div className="flex items-center space-x-2">
+              <span className="w-3.5 h-0.5 bg-emerald-500 border-t-2 border-dotted border-emerald-500 inline-block" />
+              <span className="text-emerald-700 font-bold">
+                AI Forecast (Expected)
+              </span>
+            </div>
+
+            {/* Confidence Cone */}
+            <div className="flex items-center space-x-2">
+              <span className="w-3 h-3 bg-emerald-100/70 border border-emerald-300 inline-block" />
+              <span className="text-neutral-500">
+                Range (Worst Case to Best Case)
+              </span>
+            </div>
+
+            {/* Zero Cash Danger Line */}
             <div className="flex items-center space-x-2">
               <span className="w-3 h-0.5 bg-orange-500 border-t border-dashed border-orange-500 inline-block" />
-              <span className="text-orange-600 font-medium">Zero-Cash Danger Line</span>
+              <span className="text-orange-600 font-medium">
+                {t('charts.zeroCashDangerLine', 'Zero-Cash Danger Line')}
+              </span>
             </div>
           </div>
 
           <div className="text-[11px] text-neutral-400">
-            Click any point to inspect that day&apos;s cash flow
+            {t('charts.clickPointHint', 'Click any point to inspect ledger transactions or AI forecast breakdown')}
           </div>
         </div>
 
-        {/* Recharts Clean Chart Container */}
-        <div className="h-[280px] sm:h-[340px] w-full">
+        {/* Recharts Chart Container */}
+        <div className="h-[320px] sm:h-[380px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={chartData}
-              onClick={(nextState) => {
-                const event = nextState as unknown as ChartClickState;
-                if (event.activePayload && event.activePayload.length > 0 && event.activePayload[0].payload) {
-                  setSelectedDay(event.activePayload[0].payload);
+              onClick={(e: any) => {
+                if (e && e.activeTooltipIndex != null) {
+                  setSelectedDayIndex(Number(e.activeTooltipIndex));
+                } else if (e && e.activePayload && e.activePayload.length > 0) {
+                  const pt = e.activePayload[0].payload;
+                  const idx = chartData.findIndex((c) => c.date === pt.date);
+                  if (idx >= 0) setSelectedDayIndex(idx);
                 }
               }}
-              margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              margin={{ top: 15, right: 15, left: -15, bottom: 5 }}
             >
-              <CartesianGrid strokeDasharray="2 2" stroke="#e5e5e5" vertical={false} />
+              <CartesianGrid strokeDasharray="2 2" stroke="#f0f0f0" vertical={false} />
+
               <XAxis
                 dataKey="date"
                 tickFormatter={(val) => {
+                  if (!val) return '';
                   const parts = val.split('-');
-                  return `${parts[2]}/${parts[1]}`;
+                  return parts.length === 3 ? `${parts[2]}/${parts[1]}` : val;
                 }}
                 tick={{ fontSize: 11, fill: '#737373' }}
                 tickLine={false}
-                axisLine={{ stroke: '#d4d4d4' }}
+                axisLine={{ stroke: '#e5e5e5' }}
               />
+
               <YAxis
                 tickFormatter={(val) => `₹${Math.round(val / 1000)}k`}
                 tick={{ fontSize: 11, fill: '#737373' }}
                 tickLine={false}
                 axisLine={false}
               />
+
               <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
-                    const d = payload[0].payload as TrajectoryPoint;
+                    const d = payload[0].payload;
+                    const isPast = d.isPast;
+                    const isAnchor = d.isAnchor;
                     return (
-                      <div className="bg-neutral-900 text-white p-3 border border-neutral-700 text-xs font-sans max-w-xs">
-                        <div className="flex items-center justify-between font-bold pb-1.5 border-b border-neutral-800">
-                          <span>{d.date} (Day {d.day})</span>
-                          <span className={d.baseBalance < 0 ? 'text-orange-400' : 'text-emerald-400 font-display'}>
-                            ₹{d.baseBalance.toLocaleString('en-IN')}
+                      <div className="bg-neutral-900 text-white p-3.5 border border-neutral-700 text-xs font-sans max-w-sm shadow-2xl">
+                        {/* Tooltip Header */}
+                        <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                          <div>
+                            <div className="flex items-center space-x-1.5">
+                              <span
+                                className={`text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.2 ${
+                                  isPast
+                                    ? 'bg-neutral-800 text-neutral-300'
+                                    : isAnchor
+                                    ? 'bg-blue-900/80 text-blue-200 border border-blue-700'
+                                    : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                }`}
+                              >
+                                {isPast
+                                  ? 'Historical Actual'
+                                  : isAnchor
+                                  ? 'Today (As-Of)'
+                                  : 'AI Forecast'}
+                              </span>
+                              <span className="text-white font-mono">{d.date}</span>
+                            </div>
+                            <span className="text-neutral-400 text-[10px] block mt-0.5">
+                              {isPast
+                                ? `Day ${d.day} (History)`
+                                : isAnchor
+                                ? 'Day 0 (Anchor Date)'
+                                : `Day +${d.day} (Prediction)`}
+                            </span>
+                          </div>
+
+                          <span
+                            className={`font-display text-base font-bold ${
+                              (d.predictedBalance ?? d.actualBalance ?? 0) < 0
+                                ? 'text-orange-400'
+                                : isPast
+                                ? 'text-white'
+                                : 'text-emerald-400'
+                            }`}
+                          >
+                            ₹{(d.predictedBalance ?? d.actualBalance ?? 0).toLocaleString('en-IN')}
                           </span>
                         </div>
+
+                        {/* Future Quantile Envelope (Worst to Best Case) */}
+                        {!isPast && !isAnchor && d.displayLower != null && d.displayUpper != null && (
+                          <div className="py-2 border-b border-neutral-800 text-[10.5px] grid grid-cols-3 gap-1">
+                            <div>
+                              <span className="text-neutral-500 block">Worst Case:</span>
+                              <span className="font-mono text-neutral-200 font-medium">
+                                ₹{d.displayLower.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-neutral-500 block">Expected:</span>
+                              <span className="font-mono text-emerald-400 font-medium">
+                                ₹{d.predictedBalance.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-neutral-500 block">Best Case:</span>
+                              <span className="font-mono text-neutral-200 font-medium">
+                                ₹{d.displayUpper.toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Inflow / Outflow Details */}
                         <div className="mt-2 space-y-1 text-[11px]">
                           <div className="flex justify-between text-neutral-300">
-                            <span>Inflows:</span>
-                            <span className="text-emerald-400 font-medium">+₹{d.inflow.toLocaleString('en-IN')}</span>
+                            <span>{isPast ? 'Recorded Inflow:' : 'Expected Inflow:'}</span>
+                            <span className="text-emerald-400 font-medium">
+                              +₹{(d.inflow ?? 0).toLocaleString('en-IN')}
+                              {d.inflowMultiplier && d.inflowMultiplier > 1.0
+                                ? ` (${d.inflowMultiplier}x surge)`
+                                : ''}
+                            </span>
                           </div>
                           <div className="flex justify-between text-neutral-300">
-                            <span>Outflows:</span>
-                            <span className="text-orange-400 font-medium">-₹{d.outflow.toLocaleString('en-IN')}</span>
+                            <span>{isPast ? 'Recorded Outflow:' : 'Expected Outflow:'}</span>
+                            <span className="text-orange-400 font-medium">
+                              -₹{(d.outflow ?? 0).toLocaleString('en-IN')}
+                            </span>
                           </div>
+
+                          {/* Indian Festival Catalyst Marker */}
+                          {d.festivals && d.festivals.length > 0 && (
+                            <div className="pt-1.5 border-t border-neutral-800 text-[11px] text-amber-300 flex items-start space-x-1">
+                              <span>✨</span>
+                              <span>
+                                <strong className="font-semibold">Festive Catalyst:</strong>{' '}
+                                {d.festivals.join(', ')}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Statutory Tax Warning */}
+                          {d.statutoryDrain && (
+                            <div className="pt-1 text-[11px] text-rose-300 flex items-start space-x-1">
+                              <span>⚠️</span>
+                              <span>
+                                <strong className="font-semibold">Statutory Drain:</strong>{' '}
+                                {d.statutoryDrain}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Itemized Transactions or Commitments */}
                           {d.events && d.events.length > 0 && (
-                            <div className="pt-1.5 border-t border-neutral-800 text-[10px] text-amber-300">
-                              📌 Key Events: {d.events.join(', ')}
+                            <div className="pt-1.5 border-t border-neutral-800 text-[10px] text-neutral-400">
+                              📌 {isPast ? 'Ledger Entries:' : 'Scheduled:'} {d.events.slice(0, 3).join(', ')}
+                              {d.events.length > 3 ? ` (+${d.events.length - 3} more)` : ''}
                             </div>
                           )}
                         </div>
@@ -159,71 +343,152 @@ export default function ForecastingCharts({
                 }}
               />
 
+              {/* Zero Balance Danger Line */}
               <ReferenceLine
                 y={0}
                 stroke="#f97316"
                 strokeDasharray="4 4"
                 strokeWidth={1.5}
                 label={{
-                  value: 'Zero Balance Line',
+                  value: t('charts.zeroBalanceLineLabel', 'Zero Balance Line'),
                   fill: '#ea580c',
                   fontSize: 10,
                   position: 'insideTopLeft',
                 }}
               />
 
-              <Area
-                type="linear"
-                dataKey="optimisticBalance"
-                stroke="transparent"
-                fill="#e5e5e5"
-                fillOpacity={0.6}
+              {/* Anchor Vertical Reference Line: Today (As-Of Date) */}
+              <ReferenceLine
+                x={asOfDate}
+                stroke="#2563eb"
+                strokeDasharray="3 3"
+                strokeWidth={1.75}
+                label={{
+                  value: 'Today (As-Of Date)',
+                  fill: '#1d4ed8',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  position: 'top',
+                }}
               />
+
+              {/* Shaded Upper Confidence Band (Only for Future Points) */}
               <Area
-                type="linear"
-                dataKey="conservativeBalance"
+                type="monotone"
+                dataKey="displayUpper"
+                stroke="transparent"
+                fill="#10b981"
+                fillOpacity={0.12}
+                isAnimationActive={false}
+              />
+
+              {/* White Mask for Lower Confidence Band */}
+              <Area
+                type="monotone"
+                dataKey="displayLower"
                 stroke="transparent"
                 fill="#ffffff"
                 fillOpacity={1.0}
+                isAnimationActive={false}
               />
 
+              {/* Left Half: Historical Actuals Solid Line (Verified Bank Ledger) */}
               <Line
-                type="linear"
-                dataKey="baseBalance"
-                stroke="#171717"
-                strokeWidth={2}
+                type="monotone"
+                dataKey="actualBalance"
+                stroke="#0f172a"
+                strokeWidth={2.5}
                 dot={false}
-                activeDot={{ r: 4, fill: '#171717', stroke: '#fff', strokeWidth: 2 }}
+                connectNulls={false}
+                isAnimationActive={false}
+                activeDot={{ r: 5, fill: '#0f172a', stroke: '#ffffff', strokeWidth: 2 }}
+              />
+
+              {/* Right Half: SageMaker Future Predictions Dotted Green Line */}
+              <Line
+                type="monotone"
+                dataKey="predictedBalance"
+                stroke="#10b981"
+                strokeWidth={2.5}
+                strokeDasharray="5 5"
+                dot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+                activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
               />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Selected Day Inspection Row (Touching border cell) */}
+      {/* 3. Selected Day Explainable AI (XAI) Drawer */}
       {selectedDay && (
-        <div className="p-4 sm:p-6 bg-neutral-50/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center space-x-3">
-              <span className="font-bold text-sm text-neutral-900">
-                Day {selectedDay.day}: {selectedDay.date}
+        <div className="p-4 sm:p-6 bg-neutral-50/70 border-t border-neutral-200">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center flex-wrap gap-2.5 mb-1.5">
+                <span className="font-bold text-sm text-neutral-900 font-mono">
+                  {selectedDay.date}{' '}
+                  {selectedDay.isPast
+                    ? `(Historical Day ${selectedDay.day})`
+                    : selectedDay.isAnchor
+                    ? `(Today / As-Of Date)`
+                    : `(Forecast Day +${selectedDay.day})`}
+                </span>
+                <span className="text-xs font-semibold px-2 py-0.5 bg-neutral-200/80 text-neutral-800 font-display">
+                  Balance: ₹
+                  {(
+                    selectedDay.predictedBalance ??
+                    selectedDay.actualBalance ??
+                    selectedDay.baseBalance ??
+                    0
+                  ).toLocaleString('en-IN')}
+                </span>
+
+                {selectedDay.isPast && (
+                  <span className="text-xs font-semibold px-2 py-0.5 bg-neutral-100 text-neutral-700 border border-neutral-300">
+                    Confirmed Bank Ledger
+                  </span>
+                )}
+
+                {!selectedDay.isPast && !selectedDay.isAnchor && (
+                  <span className="text-xs font-semibold px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    AI Forecast (Expected)
+                  </span>
+                )}
+
+                {selectedDay.festivals && selectedDay.festivals.length > 0 && (
+                  <span className="text-xs font-bold px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300">
+                    ✨ {selectedDay.festivals.join(', ')} ({selectedDay.inflowMultiplier || 1.8}x Uplift)
+                  </span>
+                )}
+                {selectedDay.statutoryDrain && (
+                  <span className="text-xs font-bold px-2 py-0.5 bg-rose-100 text-rose-900 border border-rose-300">
+                    🛡️ {selectedDay.statutoryDrain}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-neutral-600">
+                {selectedDay.events && selectedDay.events.length > 0
+                  ? `${selectedDay.isPast ? 'Ledger Activity:' : 'Scheduled Obligations:'} ${selectedDay.events.join(', ')}`
+                  : `Operating cash velocity (In: +₹${(selectedDay.inflow ?? 0).toLocaleString('en-IN')}, Out: -₹${(selectedDay.outflow ?? 0).toLocaleString('en-IN')})`}
+              </p>
+            </div>
+
+            <div className="text-right md:self-center shrink-0">
+              <span className="text-[11px] text-neutral-400 block uppercase tracking-wider font-medium">
+                {t('charts.dailyNetDelta', 'Daily Net Delta')}
               </span>
-              <span className="text-xs font-semibold text-neutral-700">
-                Balance: ₹{selectedDay.baseBalance.toLocaleString('en-IN')}
+              <span
+                className={`text-xl font-bold font-display ${
+                  (selectedDay.netDelta ?? 0) >= 0 ? 'text-emerald-600' : 'text-orange-600'
+                }`}
+              >
+                {(selectedDay.netDelta ?? 0) >= 0 ? '+' : ''}₹
+                {(selectedDay.netDelta ?? 0).toLocaleString('en-IN')}
               </span>
             </div>
-            <p className="text-xs text-neutral-600 mt-1">
-              {selectedDay.events && selectedDay.events.length > 0
-                ? `Scheduled: ${selectedDay.events.join(', ')}`
-                : `Operations (In: ₹${selectedDay.inflow.toLocaleString('en-IN')}, Out: ₹${selectedDay.outflow.toLocaleString('en-IN')})`}
-            </p>
-          </div>
-
-          <div className="text-right sm:self-center shrink-0">
-            <span className="text-[11px] text-neutral-400 block uppercase tracking-wider font-medium">Daily Net Delta</span>
-            <span className={`text-xl font-bold font-display ${selectedDay.netDelta >= 0 ? 'text-emerald-600' : 'text-orange-600'}`}>
-              {selectedDay.netDelta >= 0 ? '+' : ''}₹{selectedDay.netDelta.toLocaleString('en-IN')}
-            </span>
           </div>
         </div>
       )}

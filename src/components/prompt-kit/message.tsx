@@ -2,6 +2,7 @@
 
 import { Bot, RotateCcw } from 'lucide-react';
 import type { HTMLProps, ReactNode } from 'react';
+import { ChainOfThought, ChainOfThoughtStep, type ChainOfThoughtStepData } from '@/components/prompt-kit/chain-of-thought';
 import { Markdown } from '@/components/prompt-kit/markdown';
 
 export type ChatMessageRole = 'user' | 'assistant';
@@ -14,6 +15,7 @@ export interface ChatMessageData {
   status: ChatMessageStatus;
   createdAt: number;
   requestId?: string;
+  steps?: ChainOfThoughtStepData[];
 }
 
 export type MessageProps = { children: ReactNode; className?: string } & HTMLProps<HTMLDivElement>;
@@ -44,6 +46,11 @@ export function ChatMessage({ message, onRetry }: { message: ChatMessageData; on
     <Message className={`w-full ${isUser ? 'justify-end' : 'justify-start'}`} aria-label={`${isUser ? 'You' : 'FinFine'} message`}>
       {!isUser && <MessageAvatar fallback={<Bot size={16} strokeWidth={1.8} />} />}
       <div className={`flex max-w-[min(88%,42rem)] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+        {!isUser && Boolean(message.steps?.length) && (
+          <ChainOfThought steps={message.steps} isRunning={message.status === 'pending' || message.steps?.some((s) => s.status === 'running')}>
+            {message.steps?.map((step) => <ChainOfThoughtStep key={step.id} step={step} defaultOpen={step.status === 'running'} />)}
+          </ChainOfThought>
+        )}
         {message.status === 'pending' ? (
           <MessageContent className="text-neutral-500" aria-live="polite"><span className="flex items-center gap-2"><span className="flex gap-1" aria-hidden="true"><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:-0.2s]" /><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:-0.1s]" /><span className="h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400" /></span>FinFine is checking your records…</span></MessageContent>
         ) : message.status === 'failed' || message.status === 'cancelled' ? (

@@ -114,10 +114,16 @@ class AgentSettings:
             raise ValueError("MODEL_MAX_TOKENS must be between 256 and 8192")
         if not 0 <= temperature <= 2:
             raise ValueError("MODEL_TEMPERATURE must be between 0 and 2")
+        raw_base_url = os.getenv(
+            "MODEL_BASE_URL", "https://openrouter.ai/api/v1"
+        ).strip()
+        normalized_base_url = (
+            raw_base_url[:-17] if raw_base_url.endswith("/chat/completions")
+            else raw_base_url[:-18] if raw_base_url.endswith("/chat/completions/")
+            else raw_base_url
+        )
         return cls(
-            model_base_url=os.getenv(
-                "MODEL_BASE_URL", "https://openrouter.ai/api/v1"
-            ),
+            model_base_url=normalized_base_url,
             model_id=os.getenv("MODEL_ID", "nex-agi/nex-n2.5-pro:free"),
             model_api_key=model_api_key or "",
             model_max_tokens=max_tokens,

@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
+import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import {
   signIn,
   signUp,
@@ -18,7 +20,9 @@ type AuthMode = 'signIn' | 'signUp' | 'confirmSignUp' | 'forgotPassword' | 'conf
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useTranslation();
 
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [mode, setMode] = useState<AuthMode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,6 +57,7 @@ export default function LoginPage() {
         await routeAfterAuth();
       } catch {
         // User not logged in, stay on login page
+        setCheckingAuth(false);
       }
     }
     checkAuth();
@@ -267,6 +272,14 @@ export default function LoginPage() {
     }
   };
 
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
+        <FinFineProLoader />
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen bg-[#FFFFFF] text-[#111215] flex flex-col justify-between overflow-hidden select-none">
       {/* Outer Architectural Frame */}
@@ -275,17 +288,17 @@ export default function LoginPage() {
       </div>
 
       {/* Navbar: Brand Centered + Back to Home */}
-      <nav className="relative z-30 w-full px-8 sm:px-14 py-6 sm:py-9 flex items-center justify-between">
+      <nav className="relative z-30 w-full px-6 sm:px-14 py-6 sm:py-9 flex items-center justify-between">
         <Link
           href="/"
           className="text-xs sm:text-sm font-sans font-semibold text-neutral-800 hover:text-black px-4 py-2 rounded-full border border-neutral-300 hover:border-neutral-900 bg-white/80 backdrop-blur-sm transition-all duration-200 shadow-sm flex items-center space-x-1.5"
         >
           <span>←</span>
-          <span>Home</span>
+          <span>{t('nav.home', 'Home')}</span>
         </Link>
 
         <span className="font-sans font-bold text-base sm:text-lg tracking-tight text-neutral-900">
-          FinFine Pro
+          {t('common.appName', 'FinFine Pro')}
         </span>
 
         <div className="w-16" />
@@ -301,18 +314,18 @@ export default function LoginPage() {
           {/* Header */}
           <div className="text-center mb-6">
             <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900">
-              {mode === 'signIn' && 'Welcome Back'}
-              {mode === 'signUp' && 'Create Your Account'}
-              {mode === 'confirmSignUp' && 'Verify Your Email'}
-              {mode === 'forgotPassword' && 'Reset Password'}
-              {mode === 'confirmResetPassword' && 'Set New Password'}
+              {mode === 'signIn' && t('auth.welcomeBack', 'Welcome Back')}
+              {mode === 'signUp' && t('auth.createAccount', 'Create Your Account')}
+              {mode === 'confirmSignUp' && t('auth.verifyEmail', 'Verify Your Email')}
+              {mode === 'forgotPassword' && t('auth.resetPassword', 'Reset Password')}
+              {mode === 'confirmResetPassword' && t('auth.setNewPassword', 'Set New Password')}
             </h2>
             <p className="font-sans text-xs sm:text-sm text-neutral-500 mt-1.5">
-              {mode === 'signIn' && 'Secure access to your enterprise financial copilot'}
-              {mode === 'signUp' && 'Start forecasting your cash runway deterministically'}
-              {mode === 'confirmSignUp' && `Enter the 6-digit code sent to ${email}`}
-              {mode === 'forgotPassword' && 'Enter your email to receive a recovery code'}
-              {mode === 'confirmResetPassword' && 'Enter the recovery code and your new password'}
+              {mode === 'signIn' && t('auth.signInSubtitle', 'Secure access to your enterprise financial copilot')}
+              {mode === 'signUp' && t('auth.signUpSubtitle', 'Start forecasting your cash runway deterministically')}
+              {mode === 'confirmSignUp' && t('auth.verifySubtitle', { email, defaultValue: `Enter the 6-digit code sent to ${email}` })}
+              {mode === 'forgotPassword' && t('auth.forgotSubtitle', 'Enter your email to receive a recovery code')}
+              {mode === 'confirmResetPassword' && t('auth.confirmResetSubtitle', 'Enter the recovery code and your new password')}
             </p>
           </div>
 
@@ -331,7 +344,7 @@ export default function LoginPage() {
                     : 'text-neutral-500 hover:text-neutral-900'
                 }`}
               >
-                Sign In
+                {t('auth.signInTab', 'Sign In')}
               </button>
               <button
                 type="button"
@@ -345,7 +358,7 @@ export default function LoginPage() {
                     : 'text-neutral-500 hover:text-neutral-900'
                 }`}
               >
-                Sign Up
+                {t('auth.signUpTab', 'Sign Up')}
               </button>
             </div>
           )}
@@ -362,12 +375,13 @@ export default function LoginPage() {
             </div>
           )}
 
+
           {/* Form 1: Sign In */}
           {mode === 'signIn' && (
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  Email Address
+                  {t('auth.emailLabel', 'Email Address')}
                 </label>
                 <input
                   type="email"
@@ -382,7 +396,7 @@ export default function LoginPage() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-sans font-semibold text-neutral-700">
-                    Password
+                    {t('auth.passwordLabel', 'Password')}
                   </label>
                   <button
                     type="button"
@@ -392,7 +406,7 @@ export default function LoginPage() {
                     }}
                     className="text-xs font-sans text-neutral-500 hover:text-neutral-900 transition-colors"
                   >
-                    Forgot?
+                    {t('auth.forgotPasswordLink', 'Forgot?')}
                   </button>
                 </div>
                 <div className="relative">
@@ -409,7 +423,7 @@ export default function LoginPage() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700 text-xs font-sans"
                   >
-                    {showPassword ? 'Hide' : 'Show'}
+                    {showPassword ? t('auth.hidePassword', 'Hide') : t('auth.showPassword', 'Show')}
                   </button>
                 </div>
               </div>
@@ -419,7 +433,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-full bg-[#111215] text-white font-sans font-bold text-sm hover:bg-neutral-800 transition-all duration-200 shadow-md disabled:opacity-60 cursor-pointer mt-2"
               >
-                {loading ? 'Authenticating...' : 'Sign In'}
+                {loading ? t('auth.signingInBtn', 'Authenticating...') : t('auth.signInBtn', 'Sign In')}
               </button>
             </form>
           )}
@@ -429,7 +443,7 @@ export default function LoginPage() {
             <form onSubmit={handleSignUp} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  Work Email
+                  {t('auth.workEmailLabel', 'Work Email')}
                 </label>
                 <input
                   type="email"
@@ -443,7 +457,7 @@ export default function LoginPage() {
 
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  Create Password
+                  {t('auth.passwordLabel', 'Create Password')}
                 </label>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -457,7 +471,7 @@ export default function LoginPage() {
 
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  Confirm Password
+                  {t('auth.confirmPasswordLabel', 'Confirm Password')}
                 </label>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -470,7 +484,7 @@ export default function LoginPage() {
               </div>
 
               <p className="text-[11px] font-sans text-neutral-400 leading-tight">
-                Requires minimum 8 characters with numbers, symbols, and uppercase.
+                {t('auth.passwordReqText', 'Requires minimum 8 characters with numbers, symbols, and uppercase.')}
               </p>
 
               <button
@@ -478,7 +492,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-full bg-[#111215] text-white font-sans font-bold text-sm hover:bg-neutral-800 transition-all duration-200 shadow-md disabled:opacity-60 cursor-pointer mt-2"
               >
-                {loading ? 'Creating Account...' : 'Create Account'}
+                {loading ? t('auth.creatingAccountBtn', 'Creating Account...') : t('auth.createAccountBtn', 'Create Account')}
               </button>
             </form>
           )}
@@ -488,7 +502,7 @@ export default function LoginPage() {
             <form onSubmit={handleConfirmSignUp} className="space-y-4">
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  6-Digit Verification Code
+                  {t('auth.verificationCodeLabel', '6-Digit Verification Code')}
                 </label>
                 <input
                   type="text"
@@ -506,7 +520,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-full bg-[#111215] text-white font-sans font-bold text-sm hover:bg-neutral-800 transition-all duration-200 shadow-md disabled:opacity-60 cursor-pointer"
               >
-                {loading ? 'Verifying...' : 'Verify Email & Log In'}
+                {loading ? t('auth.verifyingBtn', 'Verifying...') : t('auth.verifyEmailBtn', 'Verify Email & Log In')}
               </button>
 
               <div className="flex items-center justify-between pt-2 text-xs font-sans">
@@ -514,9 +528,9 @@ export default function LoginPage() {
                   type="button"
                   onClick={handleResendCode}
                   disabled={loading}
-                  className="text-neutral-600 hover:text-neutral-900 font-semibold"
+                  className="text-neutral-600 hover:text-neutral-900 font-semibold cursor-pointer"
                 >
-                  Resend code
+                  {t('auth.resendCodeBtn', 'Resend code')}
                 </button>
                 <button
                   type="button"
@@ -524,9 +538,9 @@ export default function LoginPage() {
                     setMode('signIn');
                     clearMessages();
                   }}
-                  className="text-neutral-500 hover:text-neutral-900"
+                  className="text-neutral-500 hover:text-neutral-900 cursor-pointer"
                 >
-                  Back to Sign In
+                  {t('auth.backToSignInBtn', 'Back to Sign In')}
                 </button>
               </div>
             </form>
@@ -537,7 +551,7 @@ export default function LoginPage() {
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  Registered Email Address
+                  {t('auth.emailLabel', 'Registered Email Address')}
                 </label>
                 <input
                   type="email"
@@ -554,7 +568,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-full bg-[#111215] text-white font-sans font-bold text-sm hover:bg-neutral-800 transition-all duration-200 shadow-md disabled:opacity-60 cursor-pointer"
               >
-                {loading ? 'Sending Code...' : 'Send Recovery Code'}
+                {loading ? t('auth.sendingCodeBtn', 'Sending Code...') : t('auth.sendRecoveryCodeBtn', 'Send Recovery Code')}
               </button>
 
               <div className="text-center pt-2">
@@ -564,9 +578,9 @@ export default function LoginPage() {
                     setMode('signIn');
                     clearMessages();
                   }}
-                  className="text-xs font-sans text-neutral-500 hover:text-neutral-900"
+                  className="text-xs font-sans text-neutral-500 hover:text-neutral-900 cursor-pointer"
                 >
-                  Remembered your password? Sign In
+                  {t('auth.rememberPasswordText', 'Remembered your password? Sign In')}
                 </button>
               </div>
             </form>
@@ -577,7 +591,7 @@ export default function LoginPage() {
             <form onSubmit={handleConfirmResetPassword} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  Recovery Code
+                  {t('auth.recoveryCodeLabel', 'Recovery Code')}
                 </label>
                 <input
                   type="text"
@@ -592,7 +606,7 @@ export default function LoginPage() {
 
               <div>
                 <label className="block text-xs font-sans font-semibold text-neutral-700 mb-1">
-                  New Password
+                  {t('auth.newPasswordLabel', 'New Password')}
                 </label>
                 <input
                   type="password"
@@ -609,7 +623,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-full bg-[#111215] text-white font-sans font-bold text-sm hover:bg-neutral-800 transition-all duration-200 shadow-md disabled:opacity-60 cursor-pointer"
               >
-                {loading ? 'Updating Password...' : 'Save New Password & Sign In'}
+                {loading ? t('auth.updatingPasswordBtn', 'Updating Password...') : t('auth.saveNewPasswordBtn', 'Save New Password & Sign In')}
               </button>
 
               <div className="text-center pt-2">
@@ -619,9 +633,9 @@ export default function LoginPage() {
                     setMode('signIn');
                     clearMessages();
                   }}
-                  className="text-xs font-sans text-neutral-500 hover:text-neutral-900"
+                  className="text-xs font-sans text-neutral-500 hover:text-neutral-900 cursor-pointer"
                 >
-                  Cancel and Sign In
+                  {t('auth.cancelAndSignInBtn', 'Cancel and Sign In')}
                 </button>
               </div>
             </form>

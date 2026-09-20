@@ -40,16 +40,20 @@ def test_create_agent_registers_financial_and_code_tools() -> None:
 
     assert result["model"] == "fake-model"
     assert "Current local date and time:" in captured["system_prompt"]
-    assert captured["tools"][0].tool_name == "load_analysis_skill"
-    assert [tool.tool_name for tool in captured["tools"][1:4]] == [
+    assert [tool.tool_name for tool in captured["tools"]] == [
+        "load_analysis_skill",
         "get_latest_balance",
         "get_transactions",
         "get_upcoming_obligations",
+        "get_business_data",
+        "export_transactions_csv",
+        "export_business_data_csv",
+        "run_financial_python",
+        "predict_cash_flow_sagemaker",
     ]
-    assert captured["tools"][4].tool_name == "export_transactions_csv"
-    assert captured["tools"][5].tool_name == "run_financial_python"
     assert "Never invent" in captured["system_prompt"]
     assert "verify a total returned by a data tool" in captured["system_prompt"]
+    assert "Use get_business_data" in captured["system_prompt"]
     assert "Skill loading is optional" in captured["system_prompt"]
     assert "The user does not need to ask for Python" in captured["system_prompt"]
     assert "do not answer until you have called" in captured["system_prompt"]
@@ -66,10 +70,71 @@ def test_create_model_excludes_openrouter_reasoning_metadata(monkeypatch) -> Non
 
     monkeypatch.setattr(agent_module, "OpenAIModel", fake_model)
 
-    agent_module.create_model(settings())
+    openrouter_settings = settings()
+    openrouter_settings = AgentSettings(
+        **{
+            **openrouter_settings.__dict__,
+            "model_base_url": "https://openrouter.ai/api/v1",
+        }
+    )
+    agent_module.create_model(openrouter_settings)
 
     assert captured["params"]["extra_body"] == {
         "reasoning": {"enabled": False, "exclude": True}
+    }
+
+
+def test_create_model_uses_native_gemini_provider_for_google(monkeypatch) -> None:
+    captured = {}
+
+    def fake_model(**kwargs):
+        captured.update(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(agent_module, "GeminiModel", fake_model)
+    google_settings = settings()
+    google_settings = AgentSettings(
+        **{
+            **google_settings.__dict__,
+            "model_base_url": (
+                "https://generativelanguage.googleapis.com/v1beta/openai/"
+            ),
+            "model_id": "gemma-4-31b-it",
+        }
+    )
+
+    agent_module.create_model(google_settings)
+
+    assert captured == {
+        "client_args": {"api_key": "test-key"},
+        "model_id": "gemma-4-31b-it",
+        "params": {"max_output_tokens": 1024, "temperature": 0},
+    }
+
+
+def test_create_model_disables_minimax_thinking_output(monkeypatch) -> None:
+    captured = {}
+
+    def fake_model(**kwargs):
+        captured.update(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(agent_module, "OpenAIModel", fake_model)
+    minimax_settings = settings()
+    minimax_settings = AgentSettings(
+        **{
+            **minimax_settings.__dict__,
+            "model_base_url": "https://api.minimax.io/v1",
+            "model_id": "MiniMax-M3",
+        }
+    )
+
+    agent_module.create_model(minimax_settings)
+
+    assert captured["model_id"] == "MiniMax-M3"
+    assert captured["client_args"]["base_url"] == "https://api.minimax.io/v1"
+    assert captured["params"]["extra_body"] == {
+        "thinking": {"type": "disabled"},
     }
 
 

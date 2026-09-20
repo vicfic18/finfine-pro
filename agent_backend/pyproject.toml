@@ -9,7 +9,7 @@ dependencies = [
   "fastapi>=0.115,<1",
   "PyJWT[crypto]>=2.9,<3",
   "python-dotenv>=1,<2",
-  "strands-agents[openai]>=1,<2",
+  "strands-agents[gemini,openai]>=1,<2",
   "uvicorn[standard]>=0.30,<1",
 ]
 

@@ -353,3 +353,68 @@ body {
 .animate-gateway-float {
   animation: floatGentle 12s ease-in-out infinite;
 }
+
+/*
+  ── Ornamental circles ──
+  Each circle is absolutely anchored to its edge (top/bottom) at left: 50%.
+  Start: fully off-screen (translateY(-100%) for top, translateY(100%) for bottom).
+  End of entry: translateY(-50%) → circle centre sits at the edge → only half visible.
+  After entry the spin animation takes over, keeping the same translate so the
+  half-visible position is preserved.
+*/
+
+@keyframes orb-top-enter {
+  0%   { transform: translate(-50%, -100%) rotate(0deg);  opacity: 0; }
+  12%  { opacity: 0.2; }
+  100% { transform: translate(-50%, -50%)  rotate(360deg); opacity: 0.16; }
+}
+
+@keyframes orb-spin-cw {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes orb-bottom-enter {
+  0%   { transform: translate(-50%, 100%)  rotate(0deg);   opacity: 0; }
+  12%  { opacity: 0.2; }
+  100% { transform: translate(-50%, 50%)   rotate(-360deg); opacity: 0.16; }
+}
+
+@keyframes orb-spin-ccw {
+  from { transform: translate(-50%, 50%) rotate(0deg); }
+  to   { transform: translate(-50%, 50%) rotate(-360deg); }
+}
+
+.orb-top {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  animation:
+    orb-top-enter 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    orb-spin-cw   30s linear 2.6s infinite;
+}
+
+.orb-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  animation:
+    orb-bottom-enter 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+    orb-spin-ccw     30s linear 2.6s infinite;
+}
+
+/* ── FinFine Pro loading – sequential word reveal ── */
+@keyframes word-reveal {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes word-hide {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes loader-slide-away {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-28px); }
+}

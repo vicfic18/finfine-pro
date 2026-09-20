@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
 interface ScenarioSimulatorProps {
@@ -20,6 +21,8 @@ export default function ScenarioSimulator({
   onDelayChange,
   onReset,
 }: ScenarioSimulatorProps) {
+  const { t } = useTranslation();
+
   // Dynamic simulation computations
   const initialRunway = data.daysToZero;
   const simulatedReduction = Math.min(
@@ -38,19 +41,19 @@ export default function ScenarioSimulator({
       <div className="flex items-baseline justify-between p-4 sm:p-6 bg-white">
         <div>
           <h3 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            Cash Simulator
+            {t('scenario.title', 'Cash Simulator')}
           </h3>
           <p className="text-xs text-neutral-500 mt-0.5">
-            Test sudden expenses or customer payment delays
+            {t('scenario.subtitle', 'Test sudden expenses or customer payment delays')}
           </p>
         </div>
 
         {(unplannedExpense > 0 || delayDays > 0) && (
           <button
             onClick={onReset}
-            className="text-xs font-semibold text-neutral-900 hover:underline transition-colors uppercase tracking-wider"
+            className="text-xs font-semibold text-neutral-900 hover:underline transition-colors uppercase tracking-wider cursor-pointer"
           >
-            Reset
+            {t('scenario.reset', 'Reset')}
           </button>
         )}
       </div>
@@ -61,7 +64,9 @@ export default function ScenarioSimulator({
         {/* Slider 1: Unplanned Expense */}
         <div className="p-4 sm:p-6 space-y-3 bg-white">
           <div className="flex justify-between items-baseline">
-            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Unplanned Expense:</span>
+            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">
+              {t('scenario.unplannedExpense', 'Unplanned Expense:')}
+            </span>
             <span className="font-display font-bold text-2xl text-neutral-900">
               ₹{unplannedExpense.toLocaleString('en-IN')}
             </span>
@@ -85,9 +90,11 @@ export default function ScenarioSimulator({
         {/* Slider 2: Customer Payment Delay */}
         <div className="p-4 sm:p-6 space-y-3 bg-white">
           <div className="flex justify-between items-baseline">
-            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">Customer Delay:</span>
+            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">
+              {t('scenario.customerDelay', 'Customer Delay:')}
+            </span>
             <span className="font-display font-bold text-2xl text-neutral-900">
-              +{delayDays} Days
+              +{delayDays} {t('scenario.daysSuffix', 'Days')}
             </span>
           </div>
           <input
@@ -100,9 +107,9 @@ export default function ScenarioSimulator({
             className="w-full accent-neutral-900 cursor-pointer h-1.5 bg-neutral-200"
           />
           <div className="flex justify-between text-[10px] text-neutral-400">
-            <span>0 days</span>
-            <span>15 days</span>
-            <span>30 days</span>
+            <span>0 {t('common.days', 'days')}</span>
+            <span>15 {t('common.days', 'days')}</span>
+            <span>30 {t('common.days', 'days')}</span>
           </div>
         </div>
 
@@ -113,7 +120,7 @@ export default function ScenarioSimulator({
         <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
           <div>
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block mb-1">
-              Projected Runway Impact
+              {t('scenario.projectedRunwayImpact', 'Projected Runway Impact')}
             </span>
             <div className="flex items-baseline space-x-3">
               <span className="font-display font-bold text-2xl text-neutral-400 line-through">
@@ -121,26 +128,36 @@ export default function ScenarioSimulator({
               </span>
               <span className="text-neutral-400 font-bold">──►</span>
               <span className={`font-display font-bold text-4xl sm:text-5xl ${newRunway <= 4 ? 'text-orange-600' : 'text-neutral-900'}`}>
-                {newRunway} <span className="text-lg font-sans font-normal text-neutral-500">days runway</span>
+                {newRunway} <span className="text-lg font-sans font-normal text-neutral-500">{t('scenario.daysRunway', 'days runway')}</span>
               </span>
             </div>
           </div>
 
           {hasConflict && (
             <div className="text-xs text-orange-600 font-semibold">
-              Warning: Projected runway falls below safe operating buffer
+              {t('scenario.warningConflict', 'Warning: Projected runway falls below safe operating buffer')}
             </div>
           )}
         </div>
 
         {/* Action Strategy */}
         <div className="text-xs text-neutral-600 pt-1">
-          <span className="font-bold text-neutral-900 uppercase tracking-wider block mb-1">Mitigation Strategy:</span>
+          <span className="font-bold text-neutral-900 uppercase tracking-wider block mb-1">
+            {t('scenario.mitigationStrategy', 'Mitigation Strategy:')}
+          </span>
           <p className="leading-relaxed">
-            {unplannedExpense > 0 || delayDays > 0
-              ? `1. Consider splitting unexpected outflow of ₹${unplannedExpense.toLocaleString('en-IN')} across multiple payment cycles.
-2. Follow up on receivables due in the next 14 days before committing new capital.`
-              : 'Operational balance is currently stable. Adjust sliders to simulate cash stress and test solvency thresholds.'}
+            {unplannedExpense > 0 || delayDays > 0 ? (
+              <>
+                <span className="block mb-1">
+                  {t('scenario.mitigationPoint1', { amount: unplannedExpense.toLocaleString('en-IN'), defaultValue: `1. Consider splitting unexpected outflow of ₹${unplannedExpense.toLocaleString('en-IN')} across multiple payment cycles.` })}
+                </span>
+                <span className="block">
+                  {t('scenario.mitigationPoint2', '2. Follow up on receivables due in the next 14 days before committing new capital.')}
+                </span>
+              </>
+            ) : (
+              t('scenario.stableNotice', 'Operational balance is currently stable. Adjust sliders to simulate cash stress and test solvency thresholds.')
+            )}
           </p>
         </div>
       </div>
@@ -148,3 +165,4 @@ export default function ScenarioSimulator({
     </div>
   );
 }
+

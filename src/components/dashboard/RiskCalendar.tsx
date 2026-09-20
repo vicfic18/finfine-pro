@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { FinancialMetricData } from '@/lib/financial-store';
 
@@ -21,6 +22,7 @@ type CalendarCell = {
 };
 
 export default function RiskCalendar({ data }: RiskCalendarProps) {
+  const { t } = useTranslation();
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 5;
 
@@ -47,7 +49,15 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
   });
 
   // Calendar cells
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const weekDays = [
+    { key: 'sun', label: t('riskCalendar.weekdays.sun', 'Sun') },
+    { key: 'mon', label: t('riskCalendar.weekdays.mon', 'Mon') },
+    { key: 'tue', label: t('riskCalendar.weekdays.tue', 'Tue') },
+    { key: 'wed', label: t('riskCalendar.weekdays.wed', 'Wed') },
+    { key: 'thu', label: t('riskCalendar.weekdays.thu', 'Thu') },
+    { key: 'fri', label: t('riskCalendar.weekdays.fri', 'Fri') },
+    { key: 'sat', label: t('riskCalendar.weekdays.sat', 'Sat') },
+  ];
   const calendarCells: CalendarCell[] = [];
 
   // Empty leading days
@@ -129,10 +139,10 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
       {/* Header Cell */}
       <div className="p-4 sm:p-6 bg-white">
         <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-          Risk Calendar
+          {t('riskCalendar.title', 'Risk Calendar')}
         </h2>
         <p className="text-xs text-neutral-500 mt-1">
-          Calendar heatmap marked with cash crunch risk and mandatory statutory deadlines.
+          {t('riskCalendar.subtitle', 'Calendar heatmap marked with cash crunch risk and mandatory statutory deadlines.')}
         </p>
       </div>
 
@@ -140,17 +150,26 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
       <div className="p-3 bg-neutral-50 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-neutral-800">
         <span>{monthName}</span>
         <div className="flex items-center space-x-3 text-[11px] font-normal lowercase tracking-normal">
-          <span className="flex items-center"><span className="w-2.5 h-2.5 bg-orange-600 inline-block mr-1" /> high risk</span>
-          <span className="flex items-center"><span className="w-2.5 h-2.5 bg-orange-100 border border-orange-300 inline-block mr-1" /> medium risk</span>
-          <span className="flex items-center"><span className="w-2.5 h-2.5 bg-white border border-neutral-300 inline-block mr-1" /> normal</span>
+          <span className="flex items-center">
+            <span className="w-2.5 h-2.5 bg-orange-600 inline-block mr-1" />
+            {t('riskCalendar.highRisk', 'high risk')}
+          </span>
+          <span className="flex items-center">
+            <span className="w-2.5 h-2.5 bg-orange-100 border border-orange-300 inline-block mr-1" />
+            {t('riskCalendar.mediumRisk', 'medium risk')}
+          </span>
+          <span className="flex items-center">
+            <span className="w-2.5 h-2.5 bg-white border border-neutral-300 inline-block mr-1" />
+            {t('riskCalendar.normal', 'normal')}
+          </span>
         </div>
       </div>
 
       {/* Days of Week (Touching grid row) */}
       <div className="grid grid-cols-7 text-center text-xs font-semibold text-neutral-500 uppercase tracking-wider bg-neutral-50/50 divide-x divide-neutral-200">
         {weekDays.map((w) => (
-          <div key={w} className="py-2">
-            {w}
+          <div key={w.key} className="py-2">
+            {w.label}
           </div>
         ))}
       </div>
@@ -200,16 +219,16 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
         <table className="w-full text-left text-xs font-sans">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50 text-neutral-600 font-semibold uppercase tracking-wider">
-              <th className="py-2.5 px-4 w-28">Date</th>
-              <th className="py-2.5 px-4">Name</th>
-              <th className="py-2.5 px-4 text-right w-36">Price</th>
+              <th className="py-2.5 px-4 w-28">{t('riskCalendar.colDate', 'Date')}</th>
+              <th className="py-2.5 px-4">{t('riskCalendar.colName', 'Name')}</th>
+              <th className="py-2.5 px-4 text-right w-36">{t('riskCalendar.colPrice', 'Price')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-200">
             {tableItems.length === 0 ? (
               <tr>
                 <td colSpan={3} className="py-6 px-4 text-center text-neutral-400 text-xs">
-                  No scheduled payment obligations recorded for this month.
+                  {t('riskCalendar.emptySchedule', 'No scheduled payment obligations recorded for this month.')}
                 </td>
               </tr>
             ) : (
@@ -235,7 +254,7 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
       {tableItems.length > 0 && (
         <div className="px-4 py-2.5 bg-neutral-50 flex items-center justify-between text-xs text-neutral-600 font-medium">
           <span>
-            Showing {startIndex + 1}–{Math.min(startIndex + pageSize, tableItems.length)} of {tableItems.length}
+            {t('common.showing', 'Showing')} {startIndex + 1}–{Math.min(startIndex + pageSize, tableItems.length)} {t('common.of', 'of')} {tableItems.length}
           </span>
 
           <div className="flex items-center space-x-1">

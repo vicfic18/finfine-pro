@@ -3,7 +3,7 @@ import {
   getMerchantSettings,
   saveMerchantSettings,
   resetTenantData,
-  invalidateDashboardCache,
+  restartPredictionAndRefreshMetrics,
 } from '@/lib/financial-store';
 import { AuthenticationConfigurationError, AuthenticationError } from '@/lib/server-auth';
 import { OnboardingRequiredError, requireCompletedOnboarding } from '@/lib/onboarding-store';
@@ -30,7 +30,10 @@ export async function PUT(request: Request) {
     const tenantId = await requireCompletedOnboarding(request);
     const body = await request.json();
     const updated = await saveMerchantSettings(body, tenantId);
-    invalidateDashboardCache();
+    await restartPredictionAndRefreshMetrics({
+      reason: 'Merchant Financial Settings Updated',
+      tenantId,
+    });
     return NextResponse.json(updated);
   } catch (err: unknown) {
     if (err instanceof AuthenticationConfigurationError) return NextResponse.json({ error: err.message }, { status: 503 });
@@ -48,10 +51,16 @@ export async function DELETE(request: Request) {
   try {
     const tenantId = await requireCompletedOnboarding(request);
     const result = await resetTenantData(tenantId);
-    invalidateDashboardCache();
+    const freshMetrics = await restartPredictionAndRefreshMetrics({
+      reason: 'Complete Account Reset & Data Deletion',
+      tenantId,
+    });
     return NextResponse.json({
       success: true,
-      message: 'Account financial data reset successfully',
+      message: 'Account financial data reset successfully. Cache cleared & baseline cash flow prediction restarted.',
+      predictionRestarted: true,
+      solvencyStatus: freshMetrics.solvencyStatus,
+      daysToZero: freshMetrics.daysToZero,
       ...result,
     });
   } catch (err: unknown) {

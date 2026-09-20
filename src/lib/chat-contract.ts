@@ -24,6 +24,20 @@ export type ChatErrorResponse = {
   message: string;
 };
 
+export type ChatStreamStep = {
+  id: string;
+  kind: 'tool' | 'code';
+  title: string;
+  status: 'running' | 'complete' | 'error';
+};
+
+export type ChatStreamEvent =
+  | { type: 'start'; requestId: string; sessionId: string }
+  | { type: 'step'; step: ChatStreamStep }
+  | { type: 'text_delta'; delta: string }
+  | { type: 'done'; requestId: string; sessionId: string; answer: string }
+  | { type: 'error'; requestId: string; code: string; message: string };
+
 export type ConversationSummary = {
   sessionId: string;
   title: string;
@@ -38,6 +52,7 @@ export type ConversationMessage = {
   status: 'complete';
   createdAt: string;
   requestId: string;
+  steps?: ChatStreamStep[];
 };
 
 export type ConversationListResponse = {
@@ -131,6 +146,32 @@ export function isChatSuccessResponse(value: unknown): value is ChatSuccessRespo
   );
 }
 
+export function isChatStreamStep(value: unknown): value is ChatStreamStep {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    value.id.length <= 256 &&
+    (value.kind === 'tool' || value.kind === 'code') &&
+    typeof value.title === 'string' &&
+    value.title.length > 0 &&
+    value.title.length <= 160 &&
+    (value.status === 'running' || value.status === 'complete' || value.status === 'error')
+  );
+}
+
+export function isChatStreamEvent(value: unknown): value is ChatStreamEvent {
+  if (!isRecord(value) || typeof value.type !== 'string') return false;
+  if (value.type === 'start') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.sessionId === 'string' && isUuid(value.sessionId);
+  if (value.type === 'text_delta') return typeof value.delta === 'string';
+  if (value.type === 'done') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.sessionId === 'string' && isUuid(value.sessionId) && typeof value.answer === 'string';
+  if (value.type === 'error') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.code === 'string' && typeof value.message === 'string';
+  if (value.type === 'step') {
+    return isChatStreamStep(value.step);
+  }
+  return false;
+}
+
 function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
@@ -156,7 +197,8 @@ function isConversationMessage(value: unknown): value is ConversationMessage {
     value.status === 'complete' &&
     isIsoDate(value.createdAt) &&
     typeof value.requestId === 'string' &&
-    isUuid(value.requestId)
+    isUuid(value.requestId) &&
+    (value.steps === undefined || (Array.isArray(value.steps) && value.steps.every(isChatStreamStep)))
   );
 }
 

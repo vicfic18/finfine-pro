@@ -5,12 +5,15 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import json
 import logging
+import os
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from threading import Event
-from typing import Annotated, Any, Awaitable, Callable, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 import boto3
@@ -18,13 +21,17 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from strands.session import SnapshotSessionManager
 from strands.storage import S3Storage
 
 from finfine_agent.agent import AgentCancelledError, ask_async, create_agent
-from finfine_agent.auth import AuthenticatedPrincipal, AuthenticationError, CognitoAccessTokenValidator
+from finfine_agent.auth import (
+    AuthenticatedPrincipal,
+    AuthenticationError,
+    CognitoAccessTokenValidator,
+)
 from finfine_agent.config import AgentSettings, RuntimeSettings
 from finfine_agent.sessions import (
     CompletedResult,
@@ -38,10 +45,22 @@ from finfine_agent.sessions import (
     SessionUnavailableError,
     VisibleMessage,
 )
+from finfine_agent.streaming import stream_agent
 
+LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = getattr(logging, LOG_LEVEL_NAME, logging.INFO)
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
+logger.setLevel(LOG_LEVEL)
+if LOG_LEVEL == logging.DEBUG:
+    logging.getLogger("botocore").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4_000)]
 Answerer = Callable[..., str | Awaitable[str]]
+EventStreamer = Callable[..., AsyncIterator[dict[str, Any]]]
 
 
 class RuntimeInvocation(BaseModel):
@@ -134,6 +153,64 @@ class RuntimeService:
             await self._record_turn(principal.subject, record, request_id, request.prompt, completed.answer)
             return AgentAnswer(requestId=request.request_id, sessionId=UUID(completed.session_id), answer=completed.answer)
 
+    async def invoke_stream(
+        self,
+        request: RuntimeInvocation,
+        principal: AuthenticatedPrincipal,
+        streamer: EventStreamer,
+        http_request: Request | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Run one invocation and expose only the approved public event schema."""
+        record = self.registry.resolve(subject=principal.subject, public_id=request.session_id)
+        prompt_hash = hashlib.sha256(request.prompt.encode()).hexdigest()
+        request_id = str(request.request_id)
+        existing = self.registry.get_completed(
+            request_id=request_id,
+            subject=principal.subject,
+            session_id=record.public_id,
+            prompt_hash=prompt_hash,
+        )
+        yield {"type": "start", "requestId": request_id, "sessionId": record.public_id}
+        if existing is not None:
+            await self._record_turn(principal.subject, record, request_id, request.prompt, existing.answer)
+            yield {"type": "done", "requestId": request_id, "sessionId": existing.session_id, "answer": existing.answer}
+            return
+
+        async with self.lock_pool.get(record.storage_id):
+            existing = self.registry.get_completed(
+                request_id=request_id,
+                subject=principal.subject,
+                session_id=record.public_id,
+                prompt_hash=prompt_hash,
+            )
+            if existing is not None:
+                await self._record_turn(principal.subject, record, request_id, request.prompt, existing.answer)
+                yield {"type": "done", "requestId": request_id, "sessionId": existing.session_id, "answer": existing.answer}
+                return
+
+            answer: str | None = None
+            async for event in self._call_streamer(
+                streamer,
+                request.prompt,
+                record=record,
+                subject=principal.subject,
+                request_id=request_id,
+                http_request=http_request,
+            ):
+                if event.get("type") == "answer":
+                    answer = str(event.get("answer", ""))
+                else:
+                    yield event
+            if answer is None:
+                raise RuntimeError("agent stream completed without an answer")
+            completed = self.registry.put_completed(
+                CompletedResult(request_id, record.public_id, prompt_hash, answer),
+                subject=principal.subject,
+            )
+            self.registry.touch(record)
+            await self._record_turn(principal.subject, record, request_id, request.prompt, completed.answer)
+            yield {"type": "done", "requestId": request_id, "sessionId": completed.session_id, "answer": completed.answer}
+
     async def list_conversations(self, principal: AuthenticatedPrincipal) -> list[ConversationSummary]:
         owner = self.registry.owner_digest(principal.subject)
         async with self.lock_pool.get(f"owner:{owner}"):
@@ -181,6 +258,17 @@ class RuntimeService:
             return str(await result)
         return str(result)
 
+    async def _call_streamer(self, streamer: EventStreamer, question: str, *, record: SessionRecord, subject: str, request_id: str, http_request: Request | None) -> AsyncIterator[dict[str, Any]]:
+        async for event in streamer(
+            question,
+            session_record=record,
+            tenant_id=subject,
+            request_id=request_id,
+            runtime_settings=self.settings,
+            http_request=http_request,
+        ):
+            yield event
+
 
 @lru_cache(maxsize=4)
 def get_runtime_service(settings: RuntimeSettings) -> RuntimeService:
@@ -202,13 +290,57 @@ async def run_agent_question(question: str, *, session_record: SessionRecord, te
         boto_session=boto_session,
     )
     manager = SnapshotSessionManager(session_record.storage_id, storage=storage)
-    agent = create_agent(agent_settings, session_manager=manager, trace=False, tenant_id=tenant_id)
+    trace = os.getenv("AGENT_TRACE", "true").lower() in ("true", "1", "yes")
+    agent = create_agent(
+        agent_settings,
+        session_manager=manager,
+        trace=trace,
+        tenant_id=tenant_id,
+    )
     cancel_signal = Event()
     disconnect_task: asyncio.Task[None] | None = None
     if http_request is not None:
         disconnect_task = asyncio.create_task(_watch_disconnect(http_request, cancel_signal, agent))
     try:
         return await ask_async(agent, question, request_id=request_id, timeout_seconds=runtime_settings.request_timeout_seconds, cancel_signal=cancel_signal)
+    finally:
+        if disconnect_task is not None:
+            disconnect_task.cancel()
+        cleanup = getattr(agent, "cleanup", None)
+        if cleanup is not None:
+            cleanup()
+
+
+async def stream_agent_question(question: str, *, session_record: SessionRecord, tenant_id: str, request_id: str, runtime_settings: RuntimeSettings, http_request: Request | None = None) -> AsyncIterator[dict[str, Any]]:
+    """Build a fresh agent and publish its safe streaming projection."""
+    agent_settings = AgentSettings.from_environment()
+    boto_session = boto3.Session(profile_name=runtime_settings.aws_profile, region_name=runtime_settings.session_region)
+    storage = S3Storage(
+        runtime_settings.session_bucket,
+        prefix=runtime_settings.session_prefix,
+        boto_session=boto_session,
+    )
+    manager = SnapshotSessionManager(session_record.storage_id, storage=storage)
+    trace = os.getenv("AGENT_TRACE", "true").lower() in ("true", "1", "yes")
+    agent = create_agent(
+        agent_settings,
+        session_manager=manager,
+        trace=trace,
+        tenant_id=tenant_id,
+    )
+    cancel_signal = Event()
+    disconnect_task: asyncio.Task[None] | None = None
+    if http_request is not None:
+        disconnect_task = asyncio.create_task(_watch_disconnect(http_request, cancel_signal, agent))
+    try:
+        async for event in stream_agent(
+            agent,
+            question,
+            request_id=request_id,
+            timeout_seconds=runtime_settings.request_timeout_seconds,
+            cancel_signal=cancel_signal,
+        ):
+            yield event
     finally:
         if disconnect_task is not None:
             disconnect_task.cancel()
@@ -300,11 +432,53 @@ async def runtime_health() -> RuntimeHealthResponse:
 
 @app.post("/invocations", response_model=AgentAnswer)
 async def invoke_runtime(request: RuntimeInvocation, principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)], answerer: Annotated[Answerer, Depends(get_answerer)], runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)], http_request: Request) -> AgentAnswer | JSONResponse:
+    logger.info("POST /invocations [requestId=%s sessionId=%s]: %s", request.request_id, request.session_id, request.prompt)
     try:
-        return await get_runtime_service(runtime_settings).invoke(request, principal, answerer, http_request)
+        res = await get_runtime_service(runtime_settings).invoke(request, principal, answerer, http_request)
+        logger.info("POST /invocations completed [requestId=%s]", request.request_id)
+        return res
     except Exception as exc:
         code, message, status_code = _public_error(exc)
+        logger.warning("POST /invocations failed [requestId=%s code=%s status=%s]: %s", request.request_id, code, status_code, message)
         return _error_response(code=code, message=message, status_code=status_code, request_id=request.request_id)
+
+
+def _ndjson(event: dict[str, Any]) -> bytes:
+    return (json.dumps(event, separators=(",", ":")) + "\n").encode()
+
+
+@app.post("/invocations/stream")
+async def stream_runtime(
+    request: RuntimeInvocation,
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_current_principal)],
+    runtime_settings: Annotated[RuntimeSettings, Depends(get_runtime_settings)],
+    http_request: Request,
+) -> StreamingResponse:
+    logger.info("POST /invocations/stream [requestId=%s sessionId=%s]: %s", request.request_id, request.session_id, request.prompt)
+    async def public_events() -> AsyncIterator[bytes]:
+        try:
+            async for event in get_runtime_service(runtime_settings).invoke_stream(
+                request,
+                principal,
+                stream_agent_question,
+                http_request,
+            ):
+                if event.get("type") == "step":
+                    step = event.get("step", {})
+                    logger.info("Agent step [%s]: %s (%s)", step.get("kind"), step.get("title"), step.get("status"))
+                elif event.get("type") == "done":
+                    logger.info("POST /invocations/stream completed [requestId=%s]", request.request_id)
+                yield _ndjson(event)
+        except Exception as exc:
+            code, message, _status_code = _public_error(exc)
+            logger.warning("POST /invocations/stream failed [requestId=%s code=%s]: %s", request.request_id, code, message)
+            yield _ndjson({"type": "error", "requestId": str(request.request_id), "code": code, "message": message})
+
+    return StreamingResponse(
+        public_events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 def _summary_response(summary: ConversationSummary) -> ConversationSummaryResponse:
@@ -374,7 +548,7 @@ async def delete_conversation(
 
 
 def main() -> None:
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level=os.getenv("LOG_LEVEL", "info").lower())
 
 
 if __name__ == "__main__":
