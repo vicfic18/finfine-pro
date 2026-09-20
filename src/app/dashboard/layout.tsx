@@ -80,9 +80,9 @@ export default function DashboardLayout({
 
   const navItems = [
     { key: 'dashboard', name: t('nav.dashboard', 'Dashboard'), href: '/dashboard', icon: LayoutDashboard },
+    { key: 'chat', name: t('nav.chat', 'Chat'), href: '/dashboard/chat', icon: MessageSquare },
     { key: 'documents', name: t('nav.documents', 'Documents'), href: '/dashboard/ingestion', icon: UploadCloud },
     { key: 'obligations', name: t('nav.obligations', 'Obligations'), href: '/dashboard/obligations', icon: CalendarClock },
-    { key: 'chat', name: t('nav.chat', 'Chat'), href: '/dashboard/chat', icon: MessageSquare },
     { key: 'predictions', name: t('nav.predictions', 'Predictions'), href: '/dashboard/predictions', icon: Sliders },
     { key: 'taxCompliance', name: t('nav.taxCompliance', 'Tax Compliance'), href: '/dashboard/tax-compliance', icon: ShieldCheck },
     { key: 'settings', name: t('nav.settings', 'Settings'), href: '/dashboard/settings', icon: Settings },
@@ -196,8 +196,18 @@ export default function DashboardLayout({
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col relative overflow-hidden h-full pb-16 sm:pb-0 z-10 bg-white">
-          <div className="flex-1 overflow-y-auto w-full p-4 sm:p-8 lg:p-10 custom-scrollbar">
+        <main className="flex-1 flex flex-col relative overflow-hidden h-full pb-16 sm:pb-0 z-10 bg-[#f4f5f7]">
+          {/* Subtle faint Mone Texture background layer for all dashboard pages */}
+          <div
+            className="absolute inset-0 pointer-events-none opacity-[0.2] mix-blend-multiply bg-repeat z-0"
+            style={{
+              backgroundImage: 'url(/textures/mone-texture.webp)',
+              backgroundSize: 'auto 100%',
+            }}
+            aria-hidden="true"
+          />
+
+          <div className="flex-1 overflow-y-auto w-full p-4 sm:p-6 lg:p-8 custom-scrollbar relative z-10">
             {children}
           </div>
         </main>

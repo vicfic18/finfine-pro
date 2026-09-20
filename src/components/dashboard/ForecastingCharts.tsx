@@ -92,28 +92,7 @@ export default function ForecastingCharts({
 
   return (
     <div className="w-full bg-white divide-y divide-neutral-200">
-      
-      {/* 1. Header Cell: AI Forecast & Anchor Date */}
-      <div className="p-4 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            {t('charts.cashFlowTrajectory', 'Cash Flow as of now')}
-          </h2>
-        </div>
-
-        {/* Current Anchor / Today Indicator */}
-        <div className="flex items-center space-x-3 self-start sm:self-auto bg-neutral-50 px-3 py-2 border border-neutral-200">
-          <Calendar className="w-4 h-4 text-neutral-500" />
-          <div className="text-left">
-            <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider block">
-              Today (As-Of Date)
-            </span>
-            <span className="font-mono text-xs font-bold text-neutral-900">
-              {asOfDate}
-            </span>
-          </div>
-        </div>
-      </div>
+    
 
       {/* 2. Trajectory Line Chart Cell */}
       <div className="p-4 sm:p-6 bg-white">

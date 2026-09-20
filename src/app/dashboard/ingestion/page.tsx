@@ -95,6 +95,28 @@ export default function IngestionPage() {
         <DocumentUploadZone onUploadSuccess={() => fetchDocuments(false)} />
       </section>
 
+      {/* 4. Entity Graph View */}
+      <section aria-label="Entity Graph">
+        {hasDocuments ? (
+          <EntityGraphView
+            businessName={businessName}
+            bankStatements={bankStatements}
+            billsAndInvoices={billsAndInvoices}
+          />
+        ) : (
+          <div className="p-8 bg-neutral-50 border border-neutral-200 text-center space-y-3">
+            <div className="w-10 h-10 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center mx-auto">
+              <Network size={20} />
+            </div>
+            <h3 className="text-sm font-bold text-neutral-800">Business Network Map</h3>
+            <p className="text-xs text-neutral-500 max-w-md mx-auto">
+              Upload bank statements or bills above to see a visual map connecting your business with your suppliers, customers, and banks.
+            </p>
+          </div>
+        )}
+      </section>
+
+
       {/* 3. Document Tables */}
       <section aria-label="Ingested Documents Display" className="space-y-8">
         
@@ -134,27 +156,6 @@ export default function IngestionPage() {
           />
         </div>
 
-      </section>
-
-      {/* 4. Entity Graph View */}
-      <section aria-label="Entity Graph">
-        {hasDocuments ? (
-          <EntityGraphView
-            businessName={businessName}
-            bankStatements={bankStatements}
-            billsAndInvoices={billsAndInvoices}
-          />
-        ) : (
-          <div className="p-8 bg-neutral-50 border border-neutral-200 text-center space-y-3">
-            <div className="w-10 h-10 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center mx-auto">
-              <Network size={20} />
-            </div>
-            <h3 className="text-sm font-bold text-neutral-800">Business Network Map</h3>
-            <p className="text-xs text-neutral-500 max-w-md mx-auto">
-              Upload bank statements or bills above to see a visual map connecting your business with your suppliers, customers, and banks.
-            </p>
-          </div>
-        )}
       </section>
 
       {/* 5. Document Details Modal */}
