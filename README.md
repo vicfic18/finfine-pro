@@ -1,3 +1,9 @@
+# CREDENTIALS FOR THE LIVE DEPLOYMENT:
+
+Link: https://finfine.uthayamurthy.com
+email: tk6192361@gmail.com
+password: Theh0lytrifecta!
+
 # FinFine Pro
 
 FinFine Pro is a cash-flow intelligence workspace for Indian small and
