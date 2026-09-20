@@ -18,6 +18,7 @@ from finfine_agent.config import AgentSettings
 from finfine_agent.instructions import build_system_instructions
 from finfine_agent.lambda_executor import LambdaPythonExecutor
 from finfine_agent.observability import TerminalModelTrace, TerminalToolTrace
+from finfine_agent.speech_modes import VoiceMode
 from finfine_agent.tools import (
     create_analysis_skill_tool,
     create_business_data_csv_tool,
@@ -92,6 +93,7 @@ def create_agent(
     agent_factory: Callable[..., Any] = Agent,
     trace: bool = True,
     session_manager: Any | None = None,
+    speech_mode: VoiceMode | None = None,
 ) -> Any:
     """Build the local agent with financial reads and managed code execution."""
     resolved = settings or AgentSettings.from_environment()
@@ -113,7 +115,7 @@ def create_agent(
     )
     kwargs = dict(
         model=resolved_model,
-        system_prompt=build_system_instructions(),
+        system_prompt=build_system_instructions(speech_mode=speech_mode),
         tools=[
             skill_tool,
             get_latest_balance,

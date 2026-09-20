@@ -10,6 +10,7 @@ import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Duration } from 'aws-cdk-lib';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -236,6 +237,22 @@ s3UploadRule.addTarget(new targets.SfnStateMachine(ingestionStateMachine));
 // 7. Scale-to-Zero Serverless Agent Backend Stack
 const agentStack = backend.createStack('AgentBackendStack');
 
+const voiceTranscriberLambda = new nodejs.NodejsFunction(agentStack, 'FinFineVoiceTranscriberFunction', {
+  entry: path.join(__dirname, 'functions/voice-transcriber/handler.ts'),
+  handler: 'handler',
+  runtime: lambda.Runtime.NODEJS_22_X,
+  memorySize: 512,
+  timeout: Duration.seconds(60),
+  environment: {
+    VOICE_AWS_REGION: process.env.VOICE_AWS_REGION || 'ap-south-1',
+  },
+});
+
+voiceTranscriberLambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['transcribe:StartStreamTranscription'],
+  resources: ['*'],
+}));
+
 const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBackendFunction', {
   code: lambda.DockerImageCode.fromImageAsset(
     path.join(__dirname, '..'),
@@ -288,6 +305,15 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
     AGENT_SESSION_PREFIX: agentSessionPrefix,
     AGENT_SESSION_RETENTION_DAYS: agentSessionRetentionDays.toString(),
     AGENT_SESSION_REGION: agentStack.region,
+    VOICE_AWS_REGION: process.env.VOICE_AWS_REGION || 'ap-south-1',
+    VOICE_TRANSCRIBER_MODE: 'lambda',
+    VOICE_TRANSCRIBER_REGION: agentStack.region,
+    VOICE_TRANSCRIBER_FUNCTION_NAME: voiceTranscriberLambda.functionName,
+    POLLY_VOICE_ID: process.env.POLLY_VOICE_ID || 'Kajal',
+    POLLY_ENGINE: process.env.POLLY_ENGINE || 'neural',
+    POLLY_OUTPUT_FORMAT: process.env.POLLY_OUTPUT_FORMAT || 'mp3',
+    VOICE_MAX_DURATION_SECONDS: process.env.VOICE_MAX_DURATION_SECONDS || '30',
+    VOICE_MAX_AUDIO_BYTES: process.env.VOICE_MAX_AUDIO_BYTES || '1048576',
   },
 });
 
@@ -298,6 +324,12 @@ for (const tbl of agentTables) {
 
 // Grant read/write permissions on storage bucket for durable chat sessions
 backend.storage.resources.bucket.grantReadWrite(agentLambda);
+
+voiceTranscriberLambda.grantInvoke(agentLambda);
+agentLambda.addToRolePolicy(new iam.PolicyStatement({
+  actions: ['polly:SynthesizeSpeech', 'polly:DescribeVoices'],
+  resources: ['*'],
+}));
 
 // Grant invoke permissions on finfine-code-executor
 agentLambda.addToRolePolicy(
@@ -326,6 +358,7 @@ backend.addOutput({
     ingestionNormalizerLambdaArn: backend.ingestionNormalizer.resources.lambda.functionArn,
     agentApiUrl: agentFunctionUrl.url,
     agentFunctionArn: agentLambda.functionArn,
+    voiceTranscriberFunctionName: voiceTranscriberLambda.functionName,
     documentRecordTableName: docTable.tableName,
     transactionTableName: txnTable.tableName,
     obligationTableName: oblTable.tableName,

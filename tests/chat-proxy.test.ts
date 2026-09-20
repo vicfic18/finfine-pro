@@ -84,6 +84,37 @@ test('requires and forwards the Cognito bearer token', async () => {
   });
 });
 
+test('forwards an optional speech mode as model guidance', async () => {
+  process.env.FINFINE_AGENT_RUNTIME_URL = 'http://127.0.0.1:8080';
+  let forwardedBody: unknown;
+  globalThis.fetch = async (_input, init) => {
+    forwardedBody = JSON.parse(String(init?.body));
+    return Response.json({
+      status: 'success',
+      requestId: REQUEST_ID,
+      sessionId: SESSION_ID,
+      answer: 'आपका बैलेंस ...',
+    });
+  };
+
+  const response = await POST(chatRequest({ prompt: 'Balance?', requestId: REQUEST_ID, speechMode: 'hindi' }));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(forwardedBody, { prompt: 'Balance?', requestId: REQUEST_ID, speechMode: 'hindi' });
+});
+
+test('rejects unsupported speech modes before contacting the runtime', async () => {
+  let contacted = false;
+  globalThis.fetch = async () => {
+    contacted = true;
+    throw new Error('unexpected request');
+  };
+  const response = await POST(chatRequest({ prompt: 'Balance?', requestId: REQUEST_ID, speechMode: 'en-IN' }));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).code, 'invalid_speech_mode');
+  assert.equal(contacted, false);
+});
+
 test('streams NDJSON from the local runtime without buffering', async () => {
   process.env.FINFINE_AGENT_RUNTIME_URL = 'http://127.0.0.1:8080';
   globalThis.fetch = async (input, init) => {
