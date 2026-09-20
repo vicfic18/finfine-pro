@@ -12,6 +12,9 @@ const EXTRACTION_TIMEOUT_MS = 90_000;
 const s3Client = new S3Client({});
 const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 
+// Bedrock vision code is intentionally parked in bedrock-vision.ts and is not
+// imported or called by this active deterministic ingestion handler.
+
 export type DocumentPurpose =
   | 'BANK_ACTIVITY'
   | 'PRODUCT_SALES'

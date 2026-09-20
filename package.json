@@ -15,6 +15,7 @@
   "dependencies": {
     "@aws-amplify/adapter-nextjs": "^1.7.3",
     "@aws-amplify/ui-react": "^6.15.6",
+    "@aws-sdk/client-bedrock-runtime": "^3.1135.0",
     "@aws-sdk/client-dynamodb": "^3.1135.0",
     "@aws-sdk/client-lambda": "^3.1136.0",
     "@aws-sdk/client-s3": "^3.1135.0",
