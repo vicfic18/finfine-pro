@@ -409,7 +409,7 @@ function ChatboxContent() {
   const historyProps = { conversations, selectedId: sessionId, deletingId, loading: isHistoryLoading, onOpen: openConversation, onDelete: deleteConversation, onNew: startNewChat };
 
   return (
-    <div className="relative mx-auto flex min-h-[calc(100vh-9rem)] w-full max-w-7xl overflow-hidden border border-neutral-200 bg-white font-sans sm:min-h-[calc(100vh-5rem)] sm:rounded-2xl">
+    <div className="relative mx-auto flex h-full min-h-[calc(100vh-4.25rem)] sm:min-h-[calc(100vh-5rem)] w-full max-w-7xl overflow-hidden border-0 sm:border sm:border-neutral-200 bg-white font-sans rounded-none sm:rounded-2xl flex-1 shadow-none sm:shadow-xs">
       <aside className="hidden w-64 shrink-0 border-r border-neutral-200 sm:block"><HistoryList {...historyProps} /></aside>
       {historyOpen && (
         <div className="fixed inset-0 z-[60] flex bg-black/25 sm:hidden" role="dialog" aria-modal="true" aria-label={t('chat.chats')}>
@@ -417,7 +417,7 @@ function ChatboxContent() {
           <button type="button" className="flex-1" onClick={() => setHistoryOpen(false)} aria-label={t('chat.closeHistory')} />
         </div>
       )}
-      <section className="flex min-w-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5">
+      <section className="flex min-w-0 flex-1 flex-col px-3.5 py-3 sm:px-6 sm:py-5">
         <header className="flex items-center justify-between gap-3 border-b border-neutral-200 pb-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <button type="button" onClick={() => setHistoryOpen(true)} className="rounded-xl border border-neutral-200 p-2 text-neutral-600 sm:hidden" aria-label={t('chat.openHistory')}><PanelLeft size={17} /></button>

@@ -37,23 +37,30 @@ export default function ScenarioSimulator({
   return (
     <div className="w-full bg-white divide-y divide-neutral-200">
       
-      {/* Header Cell */}
-      <div className="flex items-baseline justify-between p-4 sm:p-6 bg-white">
+      {/* Header Cell - Single Clean Heading */}
+      <div className="flex items-baseline justify-between p-5 sm:p-6 bg-white">
         <div>
-          <h3 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            {t('scenario.title', 'Cash Simulator')}
+          <div className="flex items-center space-x-2 mb-1.5 font-mono text-[10px] uppercase tracking-widest text-neutral-500">
+            <span className="inline-flex items-center px-1.5 py-0.5 font-bold bg-neutral-900 text-white">
+              SIMULATOR
+            </span>
+            <span>/</span>
+            <span>Sensitivity Matrix</span>
+          </div>
+          <h3 className="font-display font-bold text-2xl sm:text-3xl text-neutral-950 tracking-tight">
+            Stress Simulator
           </h3>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            {t('scenario.subtitle', 'Test sudden expenses or customer payment delays')}
+          <p className="text-xs text-neutral-500 mt-1">
+            Simulate working capital shocks from unbudgeted disbursements and receivable delays.
           </p>
         </div>
 
         {(unplannedExpense > 0 || delayDays > 0) && (
           <button
             onClick={onReset}
-            className="text-xs font-semibold text-neutral-900 hover:underline transition-colors uppercase tracking-wider cursor-pointer"
+            className="text-xs font-mono font-bold text-neutral-950 hover:underline uppercase tracking-wider cursor-pointer"
           >
-            {t('scenario.reset', 'Reset')}
+            Reset
           </button>
         )}
       </div>
@@ -62,12 +69,12 @@ export default function ScenarioSimulator({
       <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200">
         
         {/* Slider 1: Unplanned Expense */}
-        <div className="p-4 sm:p-6 space-y-3 bg-white">
+        <div className="p-5 sm:p-6 space-y-3 bg-white">
           <div className="flex justify-between items-baseline">
-            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">
-              {t('scenario.unplannedExpense', 'Unplanned Expense:')}
+            <span className="font-mono text-[10.5px] font-bold text-neutral-500 uppercase tracking-widest">
+              Unbudgeted Outflow:
             </span>
-            <span className="font-display font-bold text-2xl text-neutral-900">
+            <span className="font-display font-bold text-2xl text-neutral-950">
               ₹{unplannedExpense.toLocaleString('en-IN')}
             </span>
           </div>
@@ -78,23 +85,23 @@ export default function ScenarioSimulator({
             step="5000"
             value={unplannedExpense}
             onChange={(e) => onExpenseChange(Number(e.target.value))}
-            className="w-full accent-neutral-900 cursor-pointer h-1.5 bg-neutral-200"
+            className="w-full accent-neutral-950 cursor-pointer h-1.5 bg-neutral-200"
           />
-          <div className="flex justify-between text-[10px] text-neutral-400">
+          <div className="flex justify-between font-mono text-[10px] text-neutral-400">
             <span>₹0</span>
-            <span>₹50k</span>
-            <span>₹100k</span>
+            <span>₹50,000</span>
+            <span>₹1,00,000</span>
           </div>
         </div>
 
         {/* Slider 2: Customer Payment Delay */}
-        <div className="p-4 sm:p-6 space-y-3 bg-white">
+        <div className="p-5 sm:p-6 space-y-3 bg-white">
           <div className="flex justify-between items-baseline">
-            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">
-              {t('scenario.customerDelay', 'Customer Delay:')}
+            <span className="font-mono text-[10.5px] font-bold text-neutral-500 uppercase tracking-widest">
+              Debtor Settlement Delay:
             </span>
-            <span className="font-display font-bold text-2xl text-neutral-900">
-              +{delayDays} {t('scenario.daysSuffix', 'Days')}
+            <span className="font-display font-bold text-2xl text-neutral-950">
+              +{delayDays} Days
             </span>
           </div>
           <input
@@ -104,65 +111,43 @@ export default function ScenarioSimulator({
             step="1"
             value={delayDays}
             onChange={(e) => onDelayChange(Number(e.target.value))}
-            className="w-full accent-neutral-900 cursor-pointer h-1.5 bg-neutral-200"
+            className="w-full accent-neutral-950 cursor-pointer h-1.5 bg-neutral-200"
           />
-          <div className="flex justify-between text-[10px] text-neutral-400">
-            <span>0 {t('common.days', 'days')}</span>
-            <span>15 {t('common.days', 'days')}</span>
-            <span>30 {t('common.days', 'days')}</span>
+          <div className="flex justify-between font-mono text-[10px] text-neutral-400">
+            <span>0 days</span>
+            <span>15 days</span>
+            <span>30 days</span>
           </div>
         </div>
 
       </div>
 
       {/* Impact Analysis Cell */}
-      <div className="p-4 sm:p-6 space-y-3 bg-neutral-50/20">
+      <div className="p-5 sm:p-6 space-y-3 bg-neutral-50/40">
         <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
           <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block mb-1">
-              {t('scenario.projectedRunwayImpact', 'Projected Runway Impact')}
+            <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-neutral-400 block mb-1">
+              Projected Runway Impact
             </span>
             <div className="flex items-baseline space-x-3">
               <span className="font-display font-bold text-2xl text-neutral-400 line-through">
                 {initialRunway}d
               </span>
               <span className="text-neutral-400 font-bold">──►</span>
-              <span className={`font-display font-bold text-4xl sm:text-5xl ${newRunway <= 4 ? 'text-orange-600' : 'text-neutral-900'}`}>
-                {newRunway} <span className="text-lg font-sans font-normal text-neutral-500">{t('scenario.daysRunway', 'days runway')}</span>
+              <span className={`font-display font-bold text-4xl sm:text-5xl ${newRunway <= 4 ? 'text-orange-600' : 'text-neutral-950'}`}>
+                {newRunway} <span className="text-base font-sans font-normal text-neutral-500">days runway</span>
               </span>
             </div>
           </div>
 
           {hasConflict && (
-            <div className="text-xs text-orange-600 font-semibold">
-              {t('scenario.warningConflict', 'Warning: Projected runway falls below safe operating buffer')}
+            <div className="text-xs font-mono text-orange-600 font-semibold uppercase tracking-wider">
+              Warning: Liquidity buffer breached under simulated shock.
             </div>
           )}
-        </div>
-
-        {/* Action Strategy */}
-        <div className="text-xs text-neutral-600 pt-1">
-          <span className="font-bold text-neutral-900 uppercase tracking-wider block mb-1">
-            {t('scenario.mitigationStrategy', 'Mitigation Strategy:')}
-          </span>
-          <p className="leading-relaxed">
-            {unplannedExpense > 0 || delayDays > 0 ? (
-              <>
-                <span className="block mb-1">
-                  {t('scenario.mitigationPoint1', { amount: unplannedExpense.toLocaleString('en-IN'), defaultValue: `1. Consider splitting unexpected outflow of ₹${unplannedExpense.toLocaleString('en-IN')} across multiple payment cycles.` })}
-                </span>
-                <span className="block">
-                  {t('scenario.mitigationPoint2', '2. Follow up on receivables due in the next 14 days before committing new capital.')}
-                </span>
-              </>
-            ) : (
-              t('scenario.stableNotice', 'Operational balance is currently stable. Adjust sliders to simulate cash stress and test solvency thresholds.')
-            )}
-          </p>
         </div>
       </div>
 
     </div>
   );
 }
-

@@ -1,5 +1,8 @@
 # System Architecture Design Document: Agentic Financial Copilot for Indian MSMEs
 
+> [!NOTE]
+> For the comprehensive, audited AWS architecture diagram and implementation breakdown with exact ARNs, table schemas, Step Function state machines, and Mermaid diagrams, refer to [AWS_ARCHITECTURE.md](file:///home/vicfic/prog/hacks/finfine-pro/docs/AWS_ARCHITECTURE.md).
+
 ---
 
 ## 1. Executive Summary & Problem Context

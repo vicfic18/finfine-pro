@@ -3,9 +3,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FinancialMetricData } from '@/lib/financial-store';
-
 import Link from 'next/link';
-import { ArrowUpRight, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface TaxChecksWidgetProps {
   data: FinancialMetricData;
@@ -18,30 +17,37 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
   return (
     <div className="w-full bg-white divide-y divide-neutral-200">
       
-      {/* Header Cell */}
-      <div className="p-4 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-baseline justify-between gap-4">
+      {/* Header Cell - Single Clean Heading */}
+      <div className="p-5 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-baseline justify-between gap-4">
         <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 block mb-1">
-            {t('taxChecks.statutory', 'Statutory')}
-          </span>
-          <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            {t('taxChecks.title', 'Tax Checks')}
+          <div className="flex items-center space-x-2 mb-1.5 font-mono text-[10px] uppercase tracking-widest text-neutral-500">
+            <span className="inline-flex items-center px-1.5 py-0.5 font-bold bg-neutral-900 text-white">
+              STATUTORY
+            </span>
+            <span>/</span>
+            <span>Compliance Rails</span>
+          </div>
+          <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-950 tracking-tight">
+            Tax Lockbox
           </h2>
+          <p className="text-xs text-neutral-500 mt-1">
+            Ring-fenced statutory capital and scheduled compliance remittances.
+          </p>
         </div>
 
-        <div className="flex items-center space-x-4 text-xs">
+        <div className="flex items-center space-x-4 text-xs font-mono">
           <div className="flex items-center space-x-2">
-            <span className="text-neutral-500">{t('taxChecks.taxLockboxReserved', 'Tax Lockbox Reserved:')}</span>
-            <span className="font-display font-bold text-base text-neutral-900">
+            <span className="text-neutral-500">Reserved:</span>
+            <span className="font-display font-bold text-base text-neutral-950">
               ₹{statutoryLockbox.toLocaleString('en-IN')}
             </span>
           </div>
 
           <Link
             href="/dashboard/tax-compliance"
-            className="inline-flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-900 hover:text-white text-neutral-800 font-bold text-[11px] uppercase tracking-wider transition-all"
+            className="inline-flex items-center space-x-1 px-3 py-1.5 bg-neutral-100 hover:bg-neutral-950 hover:text-white text-neutral-900 font-bold text-[11px] uppercase tracking-wider transition-all border border-neutral-300 hover:border-neutral-950"
           >
-            <span>Tax Profile & Rules</span>
+            <span>Tax Profile</span>
             <ArrowUpRight size={13} />
           </Link>
         </div>
@@ -50,47 +56,53 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
       {/* Statutory Items Grid or Empty State */}
       {statutoryCompliance.length === 0 ? (
         <div className="p-8 text-center text-xs text-neutral-500 bg-white space-y-3">
-          <p>{t('taxChecks.noObligations', 'No active statutory tax obligations configured for this cycle.')}</p>
+          <p>No active statutory tax obligations configured for this cycle.</p>
           <Link
             href="/dashboard/tax-compliance"
-            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-neutral-900 text-white font-bold text-xs uppercase tracking-wider hover:bg-neutral-800 transition-colors"
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-neutral-950 text-white font-bold text-xs uppercase tracking-wider hover:bg-neutral-800 transition-colors"
           >
             <ShieldCheck size={14} />
-            <span>Configure Tax Profile & Obligations</span>
+            <span>Configure Tax Profile</span>
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200 w-full bg-white">
-          {statutoryCompliance.map((tax, i) => {
-            const isUrgent = tax.status === 'Urgent' || tax.daysLeft <= 3;
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200 bg-white">
+          {statutoryCompliance.map((item, idx) => {
+            const isUrgent = item.status === 'Urgent';
+            const isDelayed = item.status === 'Delayed';
+
             return (
-              <div key={i} className="p-4 sm:p-6 flex flex-col justify-between bg-white space-y-4">
-                <div>
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-bold text-neutral-900 text-sm">{tax.taxName}</span>
-                    <span className="text-[10px] text-neutral-500 font-mono">({tax.form})</span>
+              <div key={idx} className="p-5 sm:p-6 flex flex-col justify-between space-y-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-neutral-950">
+                      {item.taxName}
+                    </span>
+                    <span
+                      className={`font-mono text-[9px] font-bold uppercase px-1.5 py-0.5 border ${
+                        isUrgent
+                          ? 'border-orange-600 bg-orange-50 text-orange-700'
+                          : isDelayed
+                          ? 'border-rose-600 bg-rose-50 text-rose-700'
+                          : 'border-neutral-300 bg-neutral-100 text-neutral-700'
+                      }`}
+                    >
+                      {item.status}
+                    </span>
                   </div>
 
-                  <div className="mt-3">
-                    <span className="text-[11px] text-neutral-400 uppercase tracking-wider block">
-                      {t('taxChecks.dueAmount', 'Due Amount')}
-                    </span>
-                    <div className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 mt-0.5">
-                      ₹{tax.amountDue.toLocaleString('en-IN')}
-                    </div>
+                  <div className="text-2xl font-bold font-display text-neutral-950">
+                    ₹{item.amountDue.toLocaleString('en-IN')}
+                  </div>
+
+                  <div className="text-[11px] text-neutral-500 font-mono space-y-0.5">
+                    <div>Due: {item.dueDate} ({item.daysLeft} days)</div>
+                    <div>Form: {item.form}</div>
                   </div>
                 </div>
 
-                <div className="space-y-1 text-xs pt-3 border-t border-neutral-100">
-                  <div className="flex justify-between items-center">
-                    <span className="text-neutral-500 text-[11px]">{t('taxChecks.countdown', 'Countdown:')}</span>
-                    <span className={`text-xs font-bold ${isUrgent ? 'text-orange-600' : 'text-neutral-900'}`}>
-                      {tax.daysLeft === 0 ? t('taxChecks.dueToday', 'DUE TODAY') : t('taxChecks.daysLeft', { days: tax.daysLeft, defaultValue: `${tax.daysLeft} days left` })}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-neutral-400 truncate" title={tax.penaltyIfMissedDaily}>
-                    {t('taxChecks.penalty', 'Penalty:')} {tax.penaltyIfMissedDaily}
-                  </div>
+                <div className="text-[10.5px] text-neutral-400 font-mono pt-2 border-t border-neutral-100">
+                  Late Fee: {item.penaltyIfMissedDaily}
                 </div>
               </div>
             );
@@ -101,4 +113,3 @@ export default function TaxChecksWidget({ data }: TaxChecksWidgetProps) {
     </div>
   );
 }
-

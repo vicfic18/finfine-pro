@@ -95,8 +95,8 @@ export default function DashboardLayout({
   const navItems = [
     { key: 'dashboard', name: t('nav.dashboard', 'Dashboard'), href: '/dashboard', icon: LayoutDashboard },
     { key: 'documents', name: t('nav.documents', 'Documents'), href: '/dashboard/ingestion', icon: UploadCloud },
-    { key: 'obligations', name: t('nav.obligations', 'Obligations'), href: '/dashboard/obligations', icon: CalendarClock },
     { key: 'chat', name: t('nav.chat', 'Chat'), href: '/dashboard/chat', icon: MessageSquare },
+    { key: 'obligations', name: t('nav.obligations', 'Obligations'), href: '/dashboard/obligations', icon: CalendarClock },
     { key: 'predictions', name: t('nav.predictions', 'Predictions'), href: '/dashboard/predictions', icon: Sliders },
     { key: 'taxCompliance', name: t('nav.taxCompliance', 'Tax Compliance'), href: '/dashboard/tax-compliance', icon: ShieldCheck },
     { key: 'settings', name: t('nav.settings', 'Settings'), href: '/dashboard/settings', icon: Settings },
@@ -113,14 +113,6 @@ export default function DashboardLayout({
         {/* Desktop Sidebar (Left) */}
         <aside className="hidden sm:flex flex-col w-20 border-r border-neutral-200 bg-white items-center py-6 justify-between z-20">
           <div className="flex flex-col items-center space-y-6">
-            {/* Top App Icon */}
-            <Link
-              href="/dashboard"
-              className="w-10 h-10 bg-neutral-900 text-white flex items-center justify-center font-bold text-sm tracking-wider hover:bg-neutral-800 transition-colors"
-            >
-              FF
-            </Link>
-
             <nav className="flex flex-col space-y-2">
               {navItems.map((item) => {
                 const isActive = pathname === item.href;
@@ -210,8 +202,25 @@ export default function DashboardLayout({
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 flex flex-col relative overflow-hidden h-full pb-16 sm:pb-0 z-10 bg-white">
-          <div className="flex-1 overflow-y-auto w-full p-4 sm:p-8 lg:p-10 custom-scrollbar">
+        <main className="flex-1 flex flex-col relative overflow-hidden h-full pb-16 sm:pb-0 z-10 bg-[#f4f5f7]">
+          {/* Subtle faint Mone Texture background layer for all dashboard pages */}
+          <div
+            className="absolute inset-0 pointer-events-none opacity-[0.2] mix-blend-multiply bg-repeat z-0"
+            style={{
+              backgroundImage: 'url(/textures/mone-texture.webp)',
+              backgroundSize: 'auto 100%',
+            }}
+            aria-hidden="true"
+          />
+
+          <div
+            className={clsx(
+              "flex-1 overflow-y-auto w-full custom-scrollbar relative z-10",
+              pathname.startsWith('/dashboard/chat')
+                ? "p-0 sm:p-6 lg:p-8 flex flex-col"
+                : "p-4 sm:p-6 lg:p-8"
+            )}
+          >
             {children}
           </div>
         </main>
