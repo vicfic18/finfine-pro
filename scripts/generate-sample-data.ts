@@ -872,3 +872,13 @@ export async function generateAllSampleDocuments(businessName?: string): Promise
 
   return generatedFiles;
 }
+
+if (typeof process !== 'undefined' && process.argv && process.argv[1]?.includes('generate-sample-data')) {
+  generateAllSampleDocuments()
+    .then((files) => console.log(`✅ Successfully generated ${files.length} sample documents in sample_data/`))
+    .catch((err) => {
+      console.error('❌ Error generating sample documents:', err);
+      process.exit(1);
+    });
+}
+

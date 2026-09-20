@@ -4,6 +4,7 @@ import {
   saveMerchantSettings,
   resetTenantData,
   invalidateDashboardCache,
+  restartPredictionAndRefreshMetrics,
 } from '@/lib/financial-store';
 
 export async function GET() {
@@ -23,7 +24,7 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json();
     const updated = await saveMerchantSettings(body);
-    invalidateDashboardCache();
+    await restartPredictionAndRefreshMetrics({ reason: 'Merchant Financial Settings Updated' });
     return NextResponse.json(updated);
   } catch (err: any) {
     console.error('Failed to update merchant settings:', err);
@@ -37,10 +38,15 @@ export async function PUT(request: Request) {
 export async function DELETE() {
   try {
     const result = await resetTenantData();
-    invalidateDashboardCache();
+    const freshMetrics = await restartPredictionAndRefreshMetrics({
+      reason: 'Complete Account Reset & Data Deletion',
+    });
     return NextResponse.json({
       success: true,
-      message: 'Account financial data reset successfully',
+      message: 'Account financial data reset successfully. Cache cleared & baseline cash flow prediction restarted.',
+      predictionRestarted: true,
+      solvencyStatus: freshMetrics.solvencyStatus,
+      daysToZero: freshMetrics.daysToZero,
       ...result,
     });
   } catch (err: any) {

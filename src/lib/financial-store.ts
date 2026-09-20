@@ -398,6 +398,28 @@ export async function fetchDashboardData(options?: {
   return freshMetrics;
 }
 
+/**
+ * Invalidate cache and immediately re-trigger prediction / recompute financial metrics.
+ * Ensures that whenever new bank statements or documents are ingested, or tenant data is deleted/reset,
+ * the prediction pipeline is immediately restarted and fresh forecasts are ready in cache.
+ */
+export async function restartPredictionAndRefreshMetrics(options?: {
+  reason?: string;
+  sourceDocType?: string;
+}): Promise<FinancialMetricData> {
+  invalidateDashboardCache();
+  const reasonStr = options?.reason || 'Lifecycle Trigger';
+  const docTypeStr = options?.sourceDocType ? ` [DocType: ${options.sourceDocType}]` : '';
+  console.log(`[Prediction Lifecycle] Cache invalidated. Restarting cash flow prediction (${reasonStr}${docTypeStr}) for tenant: ${tenantId}...`);
+
+  const freshMetrics = await fetchDashboardData({ forceRefresh: true });
+
+  console.log(
+    `[Prediction Lifecycle] Prediction successfully restarted! Model: ${freshMetrics.mlForecast?.modelName || 'Chronos-Bolt Quantile Ensemble'}, Solvency: ${freshMetrics.solvencyStatus}, DaysToZero: ${freshMetrics.daysToZero}, Trajectory Points: ${freshMetrics.trajectory60Days?.length || 0}`
+  );
+  return freshMetrics;
+}
+
 export async function computeDashboardMetrics(): Promise<FinancialMetricData> {
   // Fetch merchant settings for business name & rules
   const [settings, taxProfile, taxRulesCatalog, marketEventsCatalog] = await Promise.all([

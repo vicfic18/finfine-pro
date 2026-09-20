@@ -93,17 +93,17 @@ export default function ForecastingCharts({
   return (
     <div className="w-full bg-white divide-y divide-neutral-200">
       
-      {/* 1. Header Cell: SageMaker Intelligence & Anchor Date */}
+      {/* 1. Header Cell: AI Forecast & Anchor Date */}
       <div className="p-4 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2 mb-1">
             <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
-              {t('charts.projectionHorizon', 'Historical Actuals (Left) • SageMaker Predictions (Right)')}
+              {t('charts.projectionHorizon', 'Historical Actuals (Left) • AI Predictions (Right)')}
             </span>
             <span className="text-neutral-300">•</span>
             <span className="inline-flex items-center text-[10.5px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
-              AWS SageMaker Serverless Inference
+              AI Forecast • Live
             </span>
           </div>
           <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
@@ -150,7 +150,7 @@ export default function ForecastingCharts({
             <div className="flex items-center space-x-2">
               <span className="w-3.5 h-0.5 bg-emerald-500 border-t-2 border-dotted border-emerald-500 inline-block" />
               <span className="text-emerald-700 font-bold">
-                SageMaker AI Forecast (P50)
+                AI Forecast (Expected)
               </span>
             </div>
 
@@ -158,7 +158,7 @@ export default function ForecastingCharts({
             <div className="flex items-center space-x-2">
               <span className="w-3 h-3 bg-emerald-100/70 border border-emerald-300 inline-block" />
               <span className="text-neutral-500">
-                Confidence Cone (P10 - P90)
+                Range (Worst Case to Best Case)
               </span>
             </div>
 
@@ -239,7 +239,7 @@ export default function ForecastingCharts({
                                   ? 'Historical Actual'
                                   : isAnchor
                                   ? 'Today (As-Of)'
-                                  : 'SageMaker Forecast'}
+                                  : 'AI Forecast'}
                               </span>
                               <span className="text-white font-mono">{d.date}</span>
                             </div>
@@ -265,23 +265,23 @@ export default function ForecastingCharts({
                           </span>
                         </div>
 
-                        {/* Future Quantile Envelope (SageMaker P10 - P90) */}
+                        {/* Future Quantile Envelope (Worst to Best Case) */}
                         {!isPast && !isAnchor && d.displayLower != null && d.displayUpper != null && (
                           <div className="py-2 border-b border-neutral-800 text-[10.5px] grid grid-cols-3 gap-1">
                             <div>
-                              <span className="text-neutral-500 block">P10 (Stress):</span>
+                              <span className="text-neutral-500 block">Worst Case:</span>
                               <span className="font-mono text-neutral-200 font-medium">
                                 ₹{d.displayLower.toLocaleString('en-IN')}
                               </span>
                             </div>
                             <div>
-                              <span className="text-neutral-500 block">P50 (Expected):</span>
+                              <span className="text-neutral-500 block">Expected:</span>
                               <span className="font-mono text-emerald-400 font-medium">
                                 ₹{d.predictedBalance.toLocaleString('en-IN')}
                               </span>
                             </div>
                             <div>
-                              <span className="text-neutral-500 block">P90 (Best):</span>
+                              <span className="text-neutral-500 block">Best Case:</span>
                               <span className="font-mono text-neutral-200 font-medium">
                                 ₹{d.displayUpper.toLocaleString('en-IN')}
                               </span>
@@ -454,7 +454,7 @@ export default function ForecastingCharts({
 
                 {!selectedDay.isPast && !selectedDay.isAnchor && (
                   <span className="text-xs font-semibold px-2 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    SageMaker Chronos-Bolt P50
+                    AI Forecast (Expected)
                   </span>
                 )}
 

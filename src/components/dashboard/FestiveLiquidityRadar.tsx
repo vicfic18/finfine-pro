@@ -37,10 +37,10 @@ export default function FestiveLiquidityRadar({ data }: FestiveLiquidityRadarPro
           <div className="flex items-center space-x-2 mb-1.5">
             <span className="inline-flex items-center px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
               <Sparkles className="w-3 h-3 mr-1 text-amber-600" />
-              AWS SageMaker Intelligence
+              AI Seasonal Intelligence
             </span>
             <span className="text-[11px] font-mono text-neutral-400">
-              Serverless • {mlForecast?.engine === 'AWS_SAGEMAKER_SERVERLESS' ? 'Live Cloud Endpoint' : 'Chronos-Bolt Quantile'}
+              Live Cloud Analytics
             </span>
           </div>
           <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">

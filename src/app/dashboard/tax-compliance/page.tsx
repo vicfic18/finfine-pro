@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import Link from 'next/link';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
+import BrandLogo from '@/components/ui/BrandLogo';
 import type {
   BusinessEntityType,
   TurnoverBracket,
@@ -248,68 +250,70 @@ export default function TaxCompliancePage() {
   }
 
   return (
-    <div className="flex flex-col max-w-6xl mx-auto w-full font-sans bg-white border border-neutral-200 divide-y divide-neutral-200 mb-20">
-      {/* 1. Header Section */}
-      <header className="p-6 sm:p-8 bg-white flex flex-col sm:flex-row sm:items-baseline justify-between gap-4">
-        <div>
-          <div className="font-sans font-bold text-xs uppercase tracking-widest text-neutral-400 mb-2">
-            FinFine Pro • Statutory Compliance & Tax Profile
-          </div>
-          <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight">
-            Tax & Statutory Compliance Settings
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-500 mt-1 max-w-3xl">
-            Configure your enterprise classification, turnover level, and statutory obligations. The ruleset engine dynamically calculates your mandatory filing deadlines, tax lockbox reserves, and legal penalties across GST, Income Tax, Payroll, and Corporate governance.
-          </p>
+    <div className="flex flex-col max-w-6xl mx-auto w-full font-sans space-y-6 mb-20">
+      
+      {/* 1. Header Section with Breadcrumbs */}
+      <div className="space-y-2">
+        <div className="flex items-center space-x-2 text-xs font-medium text-neutral-400">
+          <Link href="/dashboard" className="hover:opacity-80 transition-opacity flex items-center">
+            <BrandLogo size="sm" />
+          </Link>
+          <span>/</span>
+          <span className="text-neutral-900 font-semibold">{t('nav.taxCompliance', 'Tax Compliance & Rules')}</span>
         </div>
 
-        {/* Global Save Button */}
-        <div className="sm:self-center">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 flex items-center space-x-2"
-          >
-            {saving ? (
-              <span>Saving & Updating Ledger...</span>
-            ) : (
-              <>
-                <ShieldCheck size={16} />
-                <span>Save & Sync Calendar</span>
-              </>
-            )}
-          </button>
-        </div>
-      </header>
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+          <div>
+            <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight leading-tight">
+              Tax & Statutory Compliance Settings
+            </h1>
+            <p className="text-xs sm:text-sm text-neutral-500 mt-1 max-w-3xl">
+              Configure your tax specification.
+            </p>
+          </div>
+        </header>
+      </div>
 
       {/* Notifications */}
       {saveSuccess && (
-        <div className="p-4 bg-emerald-50 text-emerald-900 text-xs font-semibold flex items-center space-x-2">
+        <div className="p-4 bg-emerald-50 text-emerald-900 text-xs font-semibold flex items-center space-x-2 border border-emerald-200 animate-in fade-in">
           <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
           <span>Compliance profile and statutory obligations successfully synchronized with your cash flow calendar ledger.</span>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-4 bg-red-50 text-red-900 text-xs font-semibold flex items-center space-x-2">
+        <div className="p-4 bg-red-50 text-red-900 text-xs font-semibold flex items-center space-x-2 border border-red-200 animate-in fade-in">
           <AlertTriangle size={16} className="text-red-600 shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* 2. Business Classification & Entity Level */}
-      <section className="p-6 sm:p-8 bg-white space-y-6">
-        <div className="flex items-center space-x-2 border-b border-neutral-100 pb-3">
-          <Building2 className="w-5 h-5 text-neutral-900" />
-          <h2 className="font-display font-bold text-xl text-neutral-900">
-            1. Business Level & Entity Classification
-          </h2>
+      {/* 2. Unified Black Card: Business Classification & Entity Level */}
+      <section className="bg-neutral-950 text-white border border-neutral-800 p-6 sm:p-8 space-y-6 shadow-2xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-800 pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-9 h-9 rounded bg-white text-neutral-900 flex items-center justify-center font-bold">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-display font-bold text-xl text-white">
+                1. Business Classification & Statutory Profile
+              </h2>
+              <p className="text-xs text-neutral-400">
+                Core parameters that drive your legal tax liability, GST frequency, and MCA compliance
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono px-2.5 py-1 bg-neutral-900 text-amber-400 border border-neutral-700">
+            Rules Engine Active
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Entity Type */}
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block">
+            <label className="text-xs font-bold uppercase tracking-wider text-neutral-300 block">
               Business Legal Entity
             </label>
             <select
@@ -320,7 +324,7 @@ export default function TaxCompliancePage() {
                   entityType: e.target.value as BusinessEntityType,
                 }))
               }
-              className="w-full p-2.5 bg-white border border-neutral-300 text-xs font-semibold text-neutral-900 focus:outline-none focus:border-neutral-900"
+              className="w-full p-2.5 bg-neutral-900 border border-neutral-700 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 transition-colors"
             >
               <option value="SOLE_PROPRIETORSHIP">Sole Proprietorship (Individual MSME)</option>
               <option value="PARTNERSHIP">Partnership Firm</option>
@@ -335,7 +339,7 @@ export default function TaxCompliancePage() {
 
           {/* Annual Turnover Bracket */}
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block">
+            <label className="text-xs font-bold uppercase tracking-wider text-neutral-300 block">
               Annual Turnover Range
             </label>
             <select
@@ -349,7 +353,7 @@ export default function TaxCompliancePage() {
                   annualTurnover: match ? (match.min + match.max) / 2 : p.annualTurnover,
                 }));
               }}
-              className="w-full p-2.5 bg-white border border-neutral-300 text-xs font-semibold text-neutral-900 focus:outline-none focus:border-neutral-900"
+              className="w-full p-2.5 bg-neutral-900 border border-neutral-700 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 transition-colors"
             >
               {TURNOVER_BRACKETS.map((b) => (
                 <option key={b.key} value={b.key}>
@@ -364,7 +368,7 @@ export default function TaxCompliancePage() {
 
           {/* GST Scheme */}
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block">
+            <label className="text-xs font-bold uppercase tracking-wider text-neutral-300 block">
               GST Registration Scheme
             </label>
             <select
@@ -375,7 +379,7 @@ export default function TaxCompliancePage() {
                   gstScheme: e.target.value as GstSchemeType,
                 }))
               }
-              className="w-full p-2.5 bg-white border border-neutral-300 text-xs font-semibold text-neutral-900 focus:outline-none focus:border-neutral-900"
+              className="w-full p-2.5 bg-neutral-900 border border-neutral-700 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 transition-colors"
             >
               <option value="REGULAR_MONTHLY">Regular Monthly (GSTR-1 & GSTR-3B)</option>
               <option value="QRMP_QUARTERLY">QRMP Scheme (Quarterly return with IFF)</option>
@@ -390,10 +394,10 @@ export default function TaxCompliancePage() {
           {/* Employee Count */}
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+              <label className="text-xs font-bold uppercase tracking-wider text-neutral-300">
                 Workforce / Employee Count
               </label>
-              <span className="text-xs font-bold text-neutral-900 font-mono">
+              <span className="text-xs font-bold text-amber-400 font-mono">
                 {profile.employeeCount} Employees
               </span>
             </div>
@@ -408,13 +412,13 @@ export default function TaxCompliancePage() {
                   employeeCount: Math.max(0, parseInt(e.target.value) || 0),
                 }))
               }
-              className="w-full p-2 bg-white border border-neutral-300 text-xs font-semibold text-neutral-900 focus:outline-none focus:border-neutral-900"
+              className="w-full p-2 bg-neutral-900 border border-neutral-700 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 transition-colors"
             />
-            <div className="text-[11px] text-neutral-500 flex items-center space-x-2">
-              <span className={clsx(profile.employeeCount >= 10 ? 'text-amber-700 font-bold' : 'text-neutral-400')}>
+            <div className="text-[11px] text-neutral-400 flex items-center space-x-2">
+              <span className={clsx(profile.employeeCount >= 10 ? 'text-amber-400 font-bold' : 'text-neutral-500')}>
                 • ESI (10+)
               </span>
-              <span className={clsx(profile.employeeCount >= 20 ? 'text-amber-700 font-bold' : 'text-neutral-400')}>
+              <span className={clsx(profile.employeeCount >= 20 ? 'text-amber-400 font-bold' : 'text-neutral-500')}>
                 • EPF (20+)
               </span>
             </div>
@@ -422,13 +426,13 @@ export default function TaxCompliancePage() {
 
           {/* Operating State */}
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block">
+            <label className="text-xs font-bold uppercase tracking-wider text-neutral-300 block">
               Operating State (Professional Tax)
             </label>
             <select
               value={profile.state}
               onChange={(e) => setProfile((p) => ({ ...p, state: e.target.value }))}
-              className="w-full p-2.5 bg-white border border-neutral-300 text-xs font-semibold text-neutral-900 focus:outline-none focus:border-neutral-900"
+              className="w-full p-2.5 bg-neutral-900 border border-neutral-700 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 transition-colors"
             >
               {INDIAN_STATES.map((state) => (
                 <option key={state} value={state}>
@@ -443,7 +447,7 @@ export default function TaxCompliancePage() {
 
           {/* Exact Estimated Annual Turnover */}
           <div className="space-y-2">
-            <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block">
+            <label className="text-xs font-bold uppercase tracking-wider text-neutral-300 block">
               Estimated Annual Turnover (₹)
             </label>
             <input
@@ -456,7 +460,7 @@ export default function TaxCompliancePage() {
                   annualTurnover: Math.max(0, parseFloat(e.target.value) || 0),
                 }))
               }
-              className="w-full p-2 bg-white border border-neutral-300 text-xs font-semibold text-neutral-900 focus:outline-none focus:border-neutral-900"
+              className="w-full p-2 bg-neutral-900 border border-neutral-700 text-xs font-semibold text-white focus:outline-none focus:border-amber-400 transition-colors"
             />
             <span className="text-[11px] text-neutral-400 block font-mono">
               ₹{profile.annualTurnover.toLocaleString('en-IN')}
@@ -466,7 +470,7 @@ export default function TaxCompliancePage() {
       </section>
 
       {/* 3. Automated Matching Intelligence Banner */}
-      <section className="p-4 sm:p-6 bg-neutral-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-neutral-200">
+      <section className="p-4 sm:p-6 bg-neutral-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-neutral-200">
         <div className="flex items-start space-x-3">
           <div className="p-2 bg-neutral-900 text-white shrink-0 mt-0.5">
             <Scale size={18} />
@@ -495,7 +499,7 @@ export default function TaxCompliancePage() {
       </section>
 
       {/* 4. Interactive Checkbox-Style Obligations Selector */}
-      <section className="p-6 sm:p-8 bg-white space-y-6">
+      <section className="p-6 sm:p-8 bg-white border border-neutral-200 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-100 pb-3">
           <div>
             <h2 className="font-display font-bold text-xl text-neutral-900">

@@ -3,7 +3,11 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import * as fs from 'fs';
 import * as path from 'path';
-import { invalidateDashboardCache, getMerchantSettings } from '@/lib/financial-store';
+import {
+  invalidateDashboardCache,
+  getMerchantSettings,
+  restartPredictionAndRefreshMetrics,
+} from '@/lib/financial-store';
 import {
   generateAllSampleDocuments,
   SAMPLE_DOCUMENTS_REGISTRY,
@@ -219,7 +223,10 @@ async function ingestCompleteEnterpriseSuite() {
     }
   }
 
-  invalidateDashboardCache();
+  await restartPredictionAndRefreshMetrics({
+    reason: 'Complete MSME Suite Ingested',
+    sourceDocType: 'MULTI_DOC_SUITE',
+  });
   return results;
 }
 
@@ -254,13 +261,16 @@ export async function POST(request: Request) {
         if (sampleType === 'COMPLETE' || !body.sampleType) {
           console.log('[Ingestion API] Ingesting complete MSME PDF test suite (14 documents)...');
           const results = await ingestCompleteEnterpriseSuite();
-          invalidateDashboardCache();
+          const freshMetrics = await restartPredictionAndRefreshMetrics({
+            reason: 'Complete Enterprise Suite Ingested',
+            sourceDocType: 'BANK_STATEMENT_AND_INVOICES',
+          });
 
           return NextResponse.json({
             success: true,
             sampleType: 'COMPLETE',
             documentsProcessed: results.length,
-            message: `All ${results.length} MSME sample PDF documents parsed, extracted, and normalized through Amazon S3 & DynamoDB pipeline!`,
+            message: `All ${results.length} MSME sample PDF documents parsed, extracted, and normalized through Amazon S3 & DynamoDB pipeline! Cash flow prediction restarted.`,
             featuresActivated: [
               'Cash Runway & Spendable Liquidity Ribbon',
               'Statutory Tax Lockbox (GST + TDS + EPFO)',
@@ -272,6 +282,12 @@ export async function POST(request: Request) {
               'Working Capital Cycle (DSO, DIO, DPO, CCC)',
               'Entity Relationship Graph (@xyflow/react)',
             ],
+            predictionSummary: {
+              modelName: freshMetrics.mlForecast?.modelName,
+              solvencyStatus: freshMetrics.solvencyStatus,
+              daysToZero: freshMetrics.daysToZero,
+              p50EndingBalance: freshMetrics.trajectory60Days?.[freshMetrics.trajectory60Days.length - 1]?.p50Balance,
+            },
             details: results,
           });
         }
@@ -295,15 +311,23 @@ export async function POST(request: Request) {
 
         const fileBuffer = fs.readFileSync(samplePdfPath);
         const result = await ingestPdfBuffer(fileBuffer, matched.fileName, matched.docType);
-        invalidateDashboardCache();
+        const freshMetrics = await restartPredictionAndRefreshMetrics({
+          reason: `Single Sample PDF Ingested (${matched.id})`,
+          sourceDocType: matched.docType,
+        });
 
         return NextResponse.json({
           success: true,
           sampleType: matched.id,
           documentId: result.documentId,
           fileName: result.fileName,
-          message: `Sample PDF "${matched.displayName}" parsed & normalized through pipeline into DynamoDB.`,
+          message: `Sample PDF "${matched.displayName}" parsed & normalized through pipeline into DynamoDB. Cash flow prediction restarted.`,
           pipelineSummary: result.pipelineResult?.summary || null,
+          predictionSummary: {
+            modelName: freshMetrics.mlForecast?.modelName,
+            solvencyStatus: freshMetrics.solvencyStatus,
+            daysToZero: freshMetrics.daysToZero,
+          },
         });
       }
 
@@ -314,13 +338,21 @@ export async function POST(request: Request) {
         const manualMetadata = body.metadata || {};
 
         const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
-        invalidateDashboardCache();
+        const freshMetrics = await restartPredictionAndRefreshMetrics({
+          reason: `Raw Base64 PDF Ingested (${fileName})`,
+          sourceDocType: docType,
+        });
 
         return NextResponse.json({
           success: true,
           documentId: result.documentId,
           fileName: result.fileName,
           pipelineSummary: result.pipelineResult?.summary || null,
+          predictionSummary: {
+            modelName: freshMetrics.mlForecast?.modelName,
+            solvencyStatus: freshMetrics.solvencyStatus,
+            daysToZero: freshMetrics.daysToZero,
+          },
         });
       }
 
@@ -357,7 +389,10 @@ export async function POST(request: Request) {
       const fileName = file.name || `upload_${Date.now()}`;
 
       const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
-      invalidateDashboardCache();
+      const freshMetrics = await restartPredictionAndRefreshMetrics({
+        reason: docType === 'BANK_STATEMENT' ? `New Bank Statement Ingested (${fileName})` : `New Invoice/Bill Ingested (${fileName})`,
+        sourceDocType: docType,
+      });
 
       return NextResponse.json({
         success: true,
@@ -367,9 +402,14 @@ export async function POST(request: Request) {
         documentType: docType,
         message:
           docType === 'BANK_STATEMENT'
-            ? `Successfully processed and recorded bank statement transactions.`
-            : `Successfully processed and recorded bill/invoice.`,
+            ? `Successfully processed and recorded bank statement transactions. Cash flow prediction restarted with new balance.`
+            : `Successfully processed and recorded bill/invoice. Cash flow prediction restarted with new commitments.`,
         pipelineSummary: result.pipelineResult?.summary || null,
+        predictionSummary: {
+          modelName: freshMetrics.mlForecast?.modelName,
+          solvencyStatus: freshMetrics.solvencyStatus,
+          daysToZero: freshMetrics.daysToZero,
+        },
       });
     }
 

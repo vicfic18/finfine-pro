@@ -64,6 +64,7 @@ export default function ObligationManager() {
 
   // Modal
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingObligation, setEditingObligation] = useState<ObligationData | null>(null);
 
   const fetchObligations = useCallback(async () => {
     try {
@@ -108,8 +109,11 @@ export default function ObligationManager() {
   };
 
   const handleEdit = (id: string) => {
-    // For now, open card expansion — full edit modal can be a follow-up
-    console.log('Edit obligation:', id);
+    const target = obligations.find((o) => o.id === id);
+    if (target) {
+      setEditingObligation(target);
+      setShowAddModal(true);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -356,10 +360,14 @@ export default function ObligationManager() {
         </div>
       )}
 
-      {/* Add Modal */}
+      {/* Add / Edit Modal */}
       <AddObligationModal
         isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        initialData={editingObligation}
+        onClose={() => {
+          setShowAddModal(false);
+          setEditingObligation(null);
+        }}
         onCreated={fetchObligations}
       />
     </div>
