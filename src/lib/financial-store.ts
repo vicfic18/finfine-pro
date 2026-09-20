@@ -6,6 +6,7 @@ import {
   DeleteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import outputs from '../../amplify_outputs.json';
+import { getAwsClientConfig } from './aws-client-config';
 import { predictCashFlow } from './sagemaker-forecast-client';
 import { getUpcomingIndianMilestones } from './indian-financial-calendar';
 import {
@@ -45,7 +46,7 @@ const purchaseTableName = table('PURCHASE_TABLE_NAME', 'purchaseTableName', 'Pur
 const purchaseLineItemTableName = table('PURCHASE_LINE_ITEM_TABLE_NAME', 'purchaseLineItemTableName', 'PurchaseLineItem');
 const supplierProfileTableName = table('SUPPLIER_PROFILE_TABLE_NAME', 'supplierProfileTableName', 'SupplierProfile');
 
-const dynamoClient = new DynamoDBClient({ region });
+const dynamoClient = new DynamoDBClient(getAwsClientConfig(region));
 const docClient = DynamoDBDocumentClient.from(dynamoClient, {
   marshallOptions: { removeUndefinedValues: true },
 });

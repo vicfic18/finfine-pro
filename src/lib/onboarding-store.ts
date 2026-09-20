@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { requirePrincipal } from '@/lib/server-auth';
 import { documentExtractionView } from '@/lib/document-presentation';
+import { getAwsClientConfig } from '@/lib/aws-client-config';
 import outputs from '../../amplify_outputs.json';
 
 export type OnboardingStatus = 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
@@ -67,7 +68,7 @@ const names = {
   cash: table('CASH_POSITION_TABLE_NAME', 'cashPositionTableName', 'CashPositionSnapshot'),
 };
 
-const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
+const client = DynamoDBDocumentClient.from(new DynamoDBClient(getAwsClientConfig(region)), {
   marshallOptions: { removeUndefinedValues: true },
 });
 

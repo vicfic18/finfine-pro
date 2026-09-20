@@ -10,13 +10,14 @@
 
 import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand, PutCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
+import { getAwsClientConfig } from './aws-client-config';
 
 const region = process.env.AWS_REGION || 'ap-south-1';
 const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
 export const STATUTORY_ADVISORY_TABLE_NAME =
-  process.env.STATUTORY_ADVISORY_TABLE_NAME || 'StatutoryAdvisory-ifsueqzwybf6nau7duulv5qweq-NONE';
+  process.env.STATUTORY_ADVISORY_TABLE_NAME || 'StatutoryAdvisory-zss75iliwzfp5aps6rtut7gnuu-NONE';
 
-const dynamoClient = new DynamoDBClient({ region });
+const dynamoClient = new DynamoDBClient(getAwsClientConfig(region));
 const docClient = DynamoDBDocumentClient.from(dynamoClient, {
   marshallOptions: { removeUndefinedValues: true },
 });

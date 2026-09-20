@@ -26,16 +26,17 @@ import {
   matchApplicableTaxRules,
 } from './tax-rules-engine';
 import { invalidateDashboardCache } from './financial-store';
+import { getAwsClientConfig } from './aws-client-config';
 
 const region = process.env.AWS_REGION || 'ap-south-1';
 const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
 
-const taxRuleTable = process.env.TAX_COMPLIANCE_RULE_TABLE_NAME || 'TaxComplianceRule-ifsueqzwybf6nau7duulv5qweq-NONE';
-const marketEventTable = process.env.MARKET_CALENDAR_EVENT_TABLE_NAME || 'MarketCalendarEvent-ifsueqzwybf6nau7duulv5qweq-NONE';
-const merchantSettingsTable = process.env.MERCHANT_SETTINGS_TABLE_NAME || 'MerchantFinancialSettings-ifsueqzwybf6nau7duulv5qweq-NONE';
-const obligationTable = process.env.OBLIGATION_TABLE_NAME || 'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
+const taxRuleTable = process.env.TAX_COMPLIANCE_RULE_TABLE_NAME || 'TaxComplianceRule-zss75iliwzfp5aps6rtut7gnuu-NONE';
+const marketEventTable = process.env.MARKET_CALENDAR_EVENT_TABLE_NAME || 'MarketCalendarEvent-zss75iliwzfp5aps6rtut7gnuu-NONE';
+const merchantSettingsTable = process.env.MERCHANT_SETTINGS_TABLE_NAME || 'MerchantFinancialSettings-zss75iliwzfp5aps6rtut7gnuu-NONE';
+const obligationTable = process.env.OBLIGATION_TABLE_NAME || 'Obligation-zss75iliwzfp5aps6rtut7gnuu-NONE';
 
-const dynamoClient = new DynamoDBClient({ region });
+const dynamoClient = new DynamoDBClient(getAwsClientConfig(region));
 const docClient = DynamoDBDocumentClient.from(dynamoClient, {
   marshallOptions: { removeUndefinedValues: true },
 });

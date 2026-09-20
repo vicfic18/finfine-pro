@@ -102,9 +102,11 @@ const extractorArn =
 const normalizerArn =
   process.env.INGESTION_NORMALIZER_FUNCTION_ARN || outputsCustom.ingestionNormalizerLambdaArn;
 
-const s3Client = new S3Client({ region });
-const lambdaClient = new LambdaClient({ region });
-const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
+import { getAwsClientConfig } from '@/lib/aws-client-config';
+
+const s3Client = new S3Client(getAwsClientConfig(region));
+const lambdaClient = new LambdaClient(getAwsClientConfig(region));
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient(getAwsClientConfig(region)), {
   marshallOptions: { removeUndefinedValues: true },
 });
 

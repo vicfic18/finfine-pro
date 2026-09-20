@@ -71,9 +71,9 @@ const region = process.env.AWS_REGION
   || outputs.data?.aws_region
   || outputs.auth?.aws_region
   || outputs.custom?.awsRegion
-  || 'ap-south-1';
+import { getAwsClientConfig } from '@/lib/aws-client-config';
 
-const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
+const client = DynamoDBDocumentClient.from(new DynamoDBClient(getAwsClientConfig(region)), {
   marshallOptions: { removeUndefinedValues: true },
 });
 

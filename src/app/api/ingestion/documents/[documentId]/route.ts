@@ -24,9 +24,9 @@ const confirmationTableName = process.env.MERCHANT_FIELD_CONFIRMATION_TABLE_NAME
 const region = process.env.AWS_REGION
   || configured.data?.aws_region
   || configured.auth?.aws_region
-  || configured.custom?.awsRegion
-  || 'ap-south-1';
-const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
+import { getAwsClientConfig } from '@/lib/aws-client-config';
+
+const client = DynamoDBDocumentClient.from(new DynamoDBClient(getAwsClientConfig(region)), {
   marshallOptions: { removeUndefinedValues: true },
 });
 

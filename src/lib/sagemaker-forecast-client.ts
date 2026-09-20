@@ -261,13 +261,11 @@ export async function predictCashFlow(
 
   if (endpointName) {
     try {
-      // Dynamic import to avoid runtime errors if AWS SDK is not in some bundle contexts
       const { SageMakerRuntimeClient, InvokeEndpointCommand } = await import(
         '@aws-sdk/client-sagemaker-runtime'
       );
-      const client = new SageMakerRuntimeClient({
-        region: process.env.AWS_REGION || 'ap-south-1',
-      });
+      const { getAwsClientConfig } = await import('./aws-client-config');
+      const client = new SageMakerRuntimeClient(getAwsClientConfig());
 
       const response = await client.send(
         new InvokeEndpointCommand({
