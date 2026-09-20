@@ -6,18 +6,17 @@ import Link from 'next/link';
 import {
   Sparkles,
   ArrowRight,
-  ShieldCheck,
   AlertTriangle,
   UploadCloud,
   CalendarClock,
   MessageSquare,
   RefreshCw,
-  Clock,
   FileText,
   Building2,
   Calendar
 } from 'lucide-react';
 import ForecastingCharts from '@/components/dashboard/ForecastingCharts';
+import RiskCalendar from '@/components/dashboard/RiskCalendar';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import BrandLogo from '@/components/ui/BrandLogo';
 import type { FinancialMetricData } from '@/lib/financial-store';
@@ -213,131 +212,76 @@ export default function DashboardPage() {
         <ForecastingCharts data={data} />
       </div>
 
-      {/* 5. Command Center Lower Row: Upcoming Commitments & Statutory Sentinel */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Upcoming Obligations Summary Card */}
-        <div className="bg-white border border-neutral-200 p-5 sm:p-6 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-            <div className="flex items-center space-x-2">
-              <CalendarClock className="w-4 h-4 text-neutral-700" />
-              <h3 className="font-display font-bold text-lg text-neutral-900">
-                {t('dashboard.upcomingCommitments', 'Upcoming Commitments & Outflows')}
-              </h3>
-            </div>
-            <Link
-              href="/dashboard/obligations"
-              className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center space-x-1"
-            >
-              <span>{t('common.viewAll', 'View All')}</span>
-              <ArrowRight size={12} />
-            </Link>
+      {/* 5. Upcoming Commitments & Outflows */}
+      <div className="bg-white border border-neutral-200 p-5 sm:p-6 flex flex-col justify-between space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+          <div className="flex items-center space-x-2">
+            <CalendarClock className="w-4 h-4 text-neutral-700" />
+            <h3 className="font-display font-bold text-lg text-neutral-900">
+              {t('dashboard.upcomingCommitments', 'Upcoming Commitments & Outflows')}
+            </h3>
           </div>
+          <Link
+            href="/dashboard/obligations"
+            className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center space-x-1"
+          >
+            <span>{t('common.viewAll', 'View All')}</span>
+            <ArrowRight size={12} />
+          </Link>
+        </div>
 
-          <div className="space-y-2.5 flex-1">
-            {upcomingEvents.length > 0 ? (
-              upcomingEvents.map((evt, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 bg-neutral-50 hover:bg-neutral-100/80 transition-colors border border-neutral-100"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="text-center px-2 py-1 bg-white border border-neutral-200 shrink-0">
-                      <span className="text-[10px] font-mono text-neutral-500 block">Day +{evt.day}</span>
-                      <span className="text-xs font-bold text-neutral-800">{evt.date.split('-').slice(1).join('/')}</span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-neutral-900">
-                        {evt.statutoryDrain || evt.events?.join(', ') || 'Scheduled Payment'}
-                      </p>
-                      <p className="text-[11px] text-neutral-400">
-                        {evt.statutoryDrain ? 'Statutory Tax Deadlines' : 'Vendor & Operational Outflows'}
-                      </p>
-                    </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
+          {upcomingEvents.length > 0 ? (
+            upcomingEvents.map((evt, idx) => (
+              <div
+                key={idx}
+                className="flex flex-col justify-between p-3.5 bg-neutral-50 hover:bg-neutral-100/80 transition-colors border border-neutral-100 space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="px-2 py-0.5 bg-white border border-neutral-200 font-mono text-[10px] text-neutral-500 font-bold">
+                    Day +{evt.day}
                   </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-bold font-mono text-neutral-900">
-                      -₹{(evt.outflow || 0).toLocaleString('en-IN')}
-                    </span>
-                    <span className="text-[10px] text-amber-700 font-medium block">Due in {evt.day}d</span>
-                  </div>
+                  <span className="text-[10px] font-mono text-neutral-400">
+                    {evt.date.split('-').slice(1).join('/')}
+                  </span>
                 </div>
-              ))
-            ) : (
-              <div className="p-6 text-center text-xs text-neutral-400">
-                No immediate payment obligations scheduled in the next 15 days.
+
+                <div>
+                  <p className="text-xs font-semibold text-neutral-900 line-clamp-1">
+                    {evt.statutoryDrain || evt.events?.join(', ') || 'Scheduled Payment'}
+                  </p>
+                  <p className="text-[11px] text-neutral-400">
+                    {evt.statutoryDrain ? 'Statutory Tax Deadlines' : 'Vendor & Operational Outflows'}
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-neutral-200/60 flex items-center justify-between">
+                  <span className="text-[10px] text-amber-700 font-medium">Due in {evt.day}d</span>
+                  <span className="text-xs font-bold font-mono text-neutral-900">
+                    -₹{(evt.outflow || 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
               </div>
-            )}
-          </div>
-
-          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
-            <span>Next 15 Days Outflows:</span>
-            <span className="font-bold font-mono text-neutral-900">
-              ₹{(data.commitmentsNext15Days || 0).toLocaleString('en-IN')}
-            </span>
-          </div>
+            ))
+          ) : (
+            <div className="col-span-full p-6 text-center text-xs text-neutral-400">
+              No immediate payment obligations scheduled in the next 15 days.
+            </div>
+          )}
         </div>
 
-        {/* Statutory Tax & Lockbox Sentinel Card */}
-        <div className="bg-white border border-neutral-200 p-5 sm:p-6 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-            <div className="flex items-center space-x-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <h3 className="font-display font-bold text-lg text-neutral-900">
-                {t('dashboard.statutoryTaxSentinel', 'Statutory Tax Lockbox Sentinel')}
-              </h3>
-            </div>
-            <Link
-              href="/dashboard/tax-compliance"
-              className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center space-x-1"
-            >
-              <span>{t('common.taxProfile', 'Tax Profile')}</span>
-              <ArrowRight size={12} />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-neutral-50 border border-neutral-100">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                GST Reserved
-              </span>
-              <span className="font-display text-lg font-bold text-neutral-900 mt-0.5 block">
-                ₹{(data.statutoryBreakdown?.gst || 0).toLocaleString('en-IN')}
-              </span>
-              <span className="text-[10px] text-neutral-500">GSTR-3B monthly safe reserve</span>
-            </div>
-
-            <div className="p-3 bg-neutral-50 border border-neutral-100">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                TDS & PF/ESIC
-              </span>
-              <span className="font-display text-lg font-bold text-neutral-900 mt-0.5 block">
-                ₹{((data.statutoryBreakdown?.tds || 0) + (data.statutoryBreakdown?.pfEsic || 0)).toLocaleString('en-IN')}
-              </span>
-              <span className="text-[10px] text-neutral-500">Payroll & vendor withholding</span>
-            </div>
-          </div>
-
-          <div className="p-3 bg-amber-50/70 border border-amber-200 flex items-start space-x-3">
-            <Clock className="w-4 h-4 text-amber-700 mt-0.5 shrink-0" />
-            <div className="text-xs">
-              <p className="font-bold text-amber-900">Total Statutory Shield Reserved: ₹{(data.statutoryLockbox || 0).toLocaleString('en-IN')}</p>
-              <p className="text-[11px] text-amber-800 mt-0.5">
-                Automatically ring-fenced from spendable liquidity to protect your business against MCA penalties.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
-            <span>Compliance Integrity:</span>
-            <span className="font-bold text-emerald-600 flex items-center space-x-1">
-              <ShieldCheck size={13} />
-              <span>100% Ring-Fenced</span>
-            </span>
-          </div>
+        <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
+          <span>Next 15 Days Outflows:</span>
+          <span className="font-bold font-mono text-neutral-900">
+            ₹{(data.commitmentsNext15Days || 0).toLocaleString('en-IN')}
+          </span>
         </div>
-
       </div>
+
+      {/* 6. Liquidity Calendar (Risk Calendar moved from Predictions) */}
+      <section aria-label="Liquidity Calendar" className="bg-white border border-neutral-200">
+        <RiskCalendar data={data} />
+      </section>
 
     </div>
   );

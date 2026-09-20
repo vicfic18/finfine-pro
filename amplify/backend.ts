@@ -4,6 +4,7 @@ import { data } from './data/resource';
 import { storage } from './storage/resource';
 import { documentExtractor } from './functions/document-extractor/resource';
 import { ingestionNormalizer } from './functions/ingestion-normalizer/resource';
+import { statutoryAdvisoryCron } from './functions/statutory-advisory-cron/resource';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
 import * as events from 'aws-cdk-lib/aws-events';
@@ -49,6 +50,7 @@ export const backend = defineBackend({
   storage,
   documentExtractor,
   ingestionNormalizer,
+  statutoryAdvisoryCron,
 });
 
 const agentSessionPrefix = 'agent-sessions/';
@@ -326,5 +328,7 @@ backend.addOutput({
     agentSessionBucketName: backend.storage.resources.bucket.bucketName,
     agentSessionPrefix,
     agentSessionRetentionDays,
+    statutoryAdvisoryCronLambdaArn: backend.statutoryAdvisoryCron.resources.lambda.functionArn,
+    statutoryAdvisoryTableName: 'StatutoryAdvisory-ifsueqzwybf6nau7duulv5qweq-NONE',
   },
 });

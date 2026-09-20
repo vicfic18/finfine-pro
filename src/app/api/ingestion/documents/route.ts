@@ -176,12 +176,15 @@ export async function GET() {
           invoiceNumber: meta.invoiceNumber || matchingObl?.title?.slice(0, 20) || item.id,
           counterpartyName: matchingObl?.counterpartyName || meta.counterpartyName || 'Counterparty',
           counterpartyType:
-            matchingObl?.type === 'RECEIVABLE'
+            matchingObl?.type === 'RECEIVABLE' || meta.type === 'RECEIVABLE' || meta.counterpartyType === 'CUSTOMER'
               ? 'CUSTOMER'
               : matchingObl?.isStatutory
               ? 'TAX_AUTHORITY'
               : (meta.counterpartyType as any) || 'VENDOR',
-          category: matchingObl?.category || (meta.category as any) || 'VENDOR_BILL',
+          category:
+            matchingObl?.category ||
+            (meta.category as any) ||
+            (meta.type === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL'),
           gstin: matchingObl?.statutoryId || meta.gstin,
           amount: Number(matchingObl?.amount ?? meta.amount ?? 0),
           taxAmount: Number(meta.taxAmount || 0),
