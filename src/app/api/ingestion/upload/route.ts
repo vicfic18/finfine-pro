@@ -368,15 +368,19 @@ export async function POST(request: Request) {
       const docType = ((formData.get('documentType') as string) || 'BANK_STATEMENT') as 'BANK_STATEMENT' | 'INVOICE';
       const customVendor = formData.get('counterpartyName') as string | null;
       const customAmount = formData.get('amount') as string | null;
+      const subType = (formData.get('subType') as string) || (docType === 'INVOICE' ? 'PAYABLE' : undefined);
 
       let manualMetadata: any = {};
-      if (customVendor || customAmount) {
+      if (customVendor || customAmount || subType) {
         manualMetadata = {
           counterpartyName: customVendor,
           amount: customAmount ? parseFloat(customAmount) : undefined,
           invoiceNumber: formData.get('invoiceNumber'),
           dueDate: formData.get('dueDate'),
           gstin: formData.get('gstin'),
+          type: subType, // 'PAYABLE' or 'RECEIVABLE'
+          counterpartyType: subType === 'RECEIVABLE' ? 'CUSTOMER' : 'VENDOR',
+          category: subType === 'RECEIVABLE' ? 'CUSTOMER_INVOICE' : 'VENDOR_BILL',
         };
       }
 

@@ -8,7 +8,7 @@ import BankStatementsTable from '@/components/ingestion/BankStatementsTable';
 import BillsInvoicesTable from '@/components/ingestion/BillsInvoicesTable';
 import DocumentDetailModal from '@/components/ingestion/DocumentDetailModal';
 import EntityGraphView from '@/components/ingestion/EntityGraphView';
-import { RefreshCw, Network } from 'lucide-react';
+import { RefreshCw, Network, Building2, Receipt } from 'lucide-react';
 import clsx from 'clsx';
 import BrandLogo from '@/components/ui/BrandLogo';
 import type { BankStatementDoc, BillInvoiceDoc } from '@/app/api/ingestion/documents/route';
@@ -57,23 +57,23 @@ export default function IngestionPage() {
   return (
     <div className="flex flex-col max-w-7xl mx-auto w-full font-sans pb-20 space-y-8">
       
-      {/* 1. Header with Breadcrumbs */}
+      {/* 1. Header with Clean Breadcrumbs */}
       <div className="space-y-2">
         <div className="flex items-center space-x-2 text-xs font-medium text-neutral-400">
           <Link href="/dashboard" className="hover:opacity-80 transition-opacity flex items-center">
             <BrandLogo size="sm" />
           </Link>
           <span>/</span>
-          <span className="text-neutral-900 font-semibold">{t('nav.documents', 'Documents & Ingestion')}</span>
+          <span className="text-neutral-900 font-semibold">{t('ingestion.title', 'Upload Bills & Statements')}</span>
         </div>
 
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
           <div>
-            <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight leading-tight">
-              {t('ingestion.title', 'Financial Document Ingestion')}
+            <h1 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight leading-tight">
+              {t('ingestion.title', 'Upload Bills & Statements')}
             </h1>
             <p className="text-xs sm:text-sm text-neutral-500 mt-1 max-w-2xl font-sans">
-              {t('ingestion.subtitle', 'Upload GST invoices, bills, and multi-bank statements for instant AI ledger parsing.')}
+              {t('ingestion.subtitle', 'Upload your bank statements, supplier bills, and customer sales invoices. We will organize your cash flow automatically.')}
             </p>
           </div>
 
@@ -84,57 +84,18 @@ export default function IngestionPage() {
               className="px-3.5 py-2 text-xs font-semibold bg-white border border-neutral-300 hover:bg-neutral-100 flex items-center space-x-1.5 transition-colors text-neutral-700 cursor-pointer shadow-xs"
             >
               <RefreshCw size={13} className={clsx(refreshing && "animate-spin text-neutral-900")} />
-              <span>{refreshing ? t('ingestion.syncing', 'Syncing...') : t('ingestion.refreshRecords', 'Refresh Records')}</span>
+              <span>{refreshing ? t('ingestion.syncing', 'Refreshing...') : t('ingestion.refreshRecords', 'Refresh')}</span>
             </button>
           </div>
         </header>
       </div>
 
-      {/* 2. Top-Level Document Upload Center */}
-      <section aria-label="Upload Center" className="bg-white border border-neutral-200">
+      {/* 2. Top-Level Simple Upload Zone */}
+      <section aria-label="Upload Center">
         <DocumentUploadZone onUploadSuccess={() => fetchDocuments(false)} />
       </section>
 
-      {/* 3. Document Tables */}
-      <section aria-label="Ingested Documents Display" className="space-y-8">
-        
-        {/* Table 1: Bank Statements */}
-        <div className="space-y-2.5">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-              {t('ingestion.treasury', 'Treasury Ledger')}
-            </span>
-            <h2 className="font-display font-bold text-xl text-neutral-900 tracking-tight">
-              {t('ingestion.bankStatementsTableTitle', 'Bank Account Statements')}
-            </h2>
-          </div>
-
-          <BankStatementsTable
-            documents={bankStatements}
-            onSelectDocument={(doc) => setSelectedDoc(doc)}
-          />
-        </div>
-
-        {/* Table 2: Bills and Invoices */}
-        <div className="space-y-2.5">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
-              {t('ingestion.trade', 'Trade Payables & Receivables')}
-            </span>
-            <h2 className="font-display font-bold text-xl text-neutral-900 tracking-tight">
-              {t('ingestion.billsInvoicesTableTitle', 'Commercial Invoices & Bills')}
-            </h2>
-          </div>
-
-          <BillsInvoicesTable
-            documents={billsAndInvoices}
-            onSelectDocument={(doc) => setSelectedDoc(doc)}
-          />
-        </div>
-
-      </section>
-
-      {/* 4. Entity Graph View (Rendered conditionally or with empty guidance) */}
+      {/* 4. Entity Graph View */}
       <section aria-label="Entity Graph">
         {hasDocuments ? (
           <EntityGraphView
@@ -147,12 +108,54 @@ export default function IngestionPage() {
             <div className="w-10 h-10 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center mx-auto">
               <Network size={20} />
             </div>
-            <h3 className="text-sm font-bold text-neutral-800">Counterparty Entity Graph</h3>
+            <h3 className="text-sm font-bold text-neutral-800">Business Network Map</h3>
             <p className="text-xs text-neutral-500 max-w-md mx-auto">
-              Upload commercial invoices or bank statements above to visualize the financial relationship graph connecting your business to suppliers, customers, and banks.
+              Upload bank statements or bills above to see a visual map connecting your business with your suppliers, customers, and banks.
             </p>
           </div>
         )}
+      </section>
+
+
+      {/* 3. Document Tables */}
+      <section aria-label="Ingested Documents Display" className="space-y-8">
+        
+        {/* Table 1: Bills & Invoices (Separated into Payables and Receivables) */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
+                Commercial Records
+              </span>
+              <h2 className="font-display font-bold text-lg sm:text-xl text-neutral-900 tracking-tight">
+                Bills & Sales Invoices
+              </h2>
+            </div>
+          </div>
+
+          <BillsInvoicesTable
+            documents={billsAndInvoices}
+            onSelectDocument={(doc) => setSelectedDoc(doc)}
+          />
+        </div>
+
+        {/* Table 2: Bank Account Statements */}
+        <div className="space-y-2.5">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-400 block">
+              Banking & Accounts
+            </span>
+            <h2 className="font-display font-bold text-lg sm:text-xl text-neutral-900 tracking-tight">
+              {t('ingestion.bankStatementsTableTitle', 'Bank Statements')}
+            </h2>
+          </div>
+
+          <BankStatementsTable
+            documents={bankStatements}
+            onSelectDocument={(doc) => setSelectedDoc(doc)}
+          />
+        </div>
+
       </section>
 
       {/* 5. Document Details Modal */}

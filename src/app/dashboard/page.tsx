@@ -4,20 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import Link from 'next/link';
 import {
-  Sparkles,
   ArrowRight,
-  ShieldCheck,
   AlertTriangle,
-  UploadCloud,
-  CalendarClock,
-  MessageSquare,
   RefreshCw,
-  Clock,
-  FileText,
-  Building2,
-  Calendar
 } from 'lucide-react';
 import ForecastingCharts from '@/components/dashboard/ForecastingCharts';
+import RiskCalendar from '@/components/dashboard/RiskCalendar';
 import FinFineProLoader from '@/components/ui/FinFineProLoader';
 import BrandLogo from '@/components/ui/BrandLogo';
 import type { FinancialMetricData } from '@/lib/financial-store';
@@ -54,11 +46,11 @@ export default function DashboardPage() {
 
   if (error || !data) {
     return (
-      <div className="max-w-xl mx-auto my-20 p-8 bg-white border border-neutral-200 text-center space-y-4">
-        <div className="w-12 h-12 bg-red-50 text-red-600 mx-auto flex items-center justify-center rounded-full">
+      <div className="max-w-xl mx-auto my-20 p-8 bg-white border border-neutral-300 text-center space-y-4 shadow-sm">
+        <div className="w-12 h-12 bg-red-50 text-red-600 mx-auto flex items-center justify-center border border-red-200">
           <AlertTriangle className="w-6 h-6" />
         </div>
-        <h2 className="text-xl font-bold font-display text-neutral-900">
+        <h2 className="text-xl font-bold font-display text-neutral-950">
           {t('common.errorLoading', 'Failed to Load Financial Metrics')}
         </h2>
         <p className="text-xs text-neutral-500 max-w-sm mx-auto">
@@ -66,7 +58,7 @@ export default function DashboardPage() {
         </p>
         <button
           onClick={loadData}
-          className="inline-flex items-center space-x-2 px-5 py-2.5 bg-neutral-900 text-white text-xs font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
+          className="inline-flex items-center space-x-2 px-5 py-2.5 bg-neutral-950 text-white text-xs font-mono font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
         >
           <RefreshCw className="w-4 h-4" />
           <span>{t('common.retry', 'Retry Connection')}</span>
@@ -80,261 +72,215 @@ export default function DashboardPage() {
   // Extract upcoming events and commitments from future trajectory
   const upcomingEvents = (data.trajectory60Days || [])
     .filter((d) => !d.isHistorical && !d.isAnchor && (d.events?.length > 0 || d.statutoryDrain))
-    .slice(0, 4);
+    .slice(0, 6);
 
   return (
-    <div className="flex flex-col max-w-7xl mx-auto w-full font-sans space-y-6">
+    <div className="max-w-7xl mx-auto w-full font-sans border border-neutral-300 bg-white divide-y divide-neutral-300 shadow-xs">
       
-      {/* 1. Breadcrumbs & Executive Header */}
-      <div className="space-y-2">
-        <div className="flex items-center space-x-2 text-xs font-medium text-neutral-400">
-          <BrandLogo size="sm" />
-          <span>/</span>
-          <span>{t('dashboard.overview', 'Overview')}</span>
+      {/* 1. Bauhaus Header Masthead */}
+      <header className="p-6 sm:p-8 bg-white flex flex-col justify-between gap-4">
+        <div className="flex items-center justify-between pb-3 border-b border-neutral-200 text-xs">
+          <div className="flex items-center space-x-2 font-mono text-[10.5px] font-bold text-neutral-500 uppercase tracking-widest">
+            <BrandLogo size="sm" />
+            <span>/</span>
+            <span>{t('dashboard.overview', 'Overview')}</span>
+            <span>/</span>
+          </div>
+
         </div>
 
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+        <div className="pt-2 flex flex-col sm:flex-row sm:items-baseline justify-between gap-3">
           <div>
-            <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight leading-none">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-neutral-400 block mb-1">
+              Operating Profile
+            </span>
+            <h1 className="font-display font-bold text-3xl sm:text-4xl lg:text-5xl text-neutral-950 tracking-tight leading-none">
               {data.businessName || 'My Business'}
             </h1>
-            <p className="text-xs text-neutral-500 mt-1.5 flex items-center space-x-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Deterministic cash flow & liquidity trajectory</span>
-            </p>
           </div>
-        </header>
-      </div>
-
-      {/* 2. Quick Actions Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link
-          href="/dashboard/ingestion"
-          className="p-3.5 bg-white border border-neutral-200 hover:border-neutral-900 hover:shadow-xs transition-all group flex items-center justify-between"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white flex items-center justify-center text-neutral-700 transition-colors">
-              <UploadCloud size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-900">{t('dashboard.actionUpload', 'Upload Invoices & Statements')}</p>
-              <p className="text-[11px] text-neutral-500">Sync fresh financial data</p>
-            </div>
-          </div>
-          <ArrowRight size={14} className="text-neutral-400 group-hover:text-neutral-900 group-hover:translate-x-0.5 transition-all" />
-        </Link>
-
-        <Link
-          href="/dashboard/obligations"
-          className="p-3.5 bg-white border border-neutral-200 hover:border-neutral-900 hover:shadow-xs transition-all group flex items-center justify-between"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white flex items-center justify-center text-neutral-700 transition-colors">
-              <CalendarClock size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-900">{t('dashboard.actionObligation', 'Schedule Payment / EMI')}</p>
-              <p className="text-[11px] text-neutral-500">Manage upcoming outflows</p>
-            </div>
-          </div>
-          <ArrowRight size={14} className="text-neutral-400 group-hover:text-neutral-900 group-hover:translate-x-0.5 transition-all" />
-        </Link>
-
-        <Link
-          href="/dashboard/chat"
-          className="p-3.5 bg-neutral-900 text-white hover:bg-neutral-800 transition-all group flex items-center justify-between"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded bg-neutral-800 flex items-center justify-center text-amber-400">
-              <Sparkles size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">{t('dashboard.actionAI', 'Ask Financial AI')}</p>
-              <p className="text-[11px] text-neutral-400">Runway & tax advisory</p>
-            </div>
-          </div>
-          <ArrowRight size={14} className="text-neutral-400 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-        </Link>
-      </div>
-
-      {/* 3. Primary KPI Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 bg-white border border-neutral-200 divide-y sm:divide-y-0 sm:divide-x divide-neutral-200">
-        <div className="p-4 sm:p-5">
-          <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
-            {t('dashboard.totalLiquidCash', 'Total Liquid Cash')}
-          </span>
-          <div className="font-display text-2xl sm:text-3xl font-bold text-neutral-900 mt-1">
-            ₹{data.totalLiquidBalance.toLocaleString('en-IN')}
-          </div>
-          <span className="text-[11px] text-neutral-500 mt-0.5 block">
-            {t('dashboard.bankLedger', 'Verified bank ledger balance')}
-          </span>
         </div>
+      </header>
 
-        <div className="p-4 sm:p-5">
-          <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
-            {t('dashboard.spendableCash', 'Spendable Cash')}
-          </span>
-          <div className="font-display text-2xl sm:text-3xl font-bold text-neutral-900 mt-1">
-            ₹{data.spendableLiquidity.toLocaleString('en-IN')}
-          </div>
-          <span className="text-[11px] text-neutral-500 mt-0.5 block">
-            {t('dashboard.afterBuffer', 'After tax lockbox & safety reserve')}
-          </span>
-        </div>
-
-        <div className="p-4 sm:p-5">
-          <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
-            {t('dashboard.cashRunway', 'Cash Runway')}
-          </span>
-          <div className={`font-display text-2xl sm:text-3xl font-bold mt-1 ${data.daysToZero < 14 ? 'text-orange-600' : 'text-neutral-900'}`}>
-            {data.daysToZero} {t('dashboard.days', 'Days')}
-          </div>
-          <span className="text-[11px] text-neutral-500 mt-0.5 block">
-            {t('dashboard.zeroDepletion', 'Zero-cash depletion horizon')}
-          </span>
-        </div>
-
-        <div className="p-4 sm:p-5">
-          <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
-            {t('dashboard.operatingVelocity', 'Operating Velocity')}
-          </span>
-          <div className="font-display text-2xl sm:text-3xl font-bold text-neutral-900 mt-1">
-            ₹{data.netDailyBurn.toLocaleString('en-IN')}/day
-          </div>
-          <span className="text-[11px] text-neutral-500 mt-0.5 block">
-            {t('dashboard.netBurn', 'Net daily burn rate')}
-          </span>
-        </div>
-      </div>
-
-      {/* 4. Primary Centerpiece: Cash Flow Trajectory Graph */}
-      <div className="bg-white border border-neutral-200">
-        <ForecastingCharts data={data} />
-      </div>
-
-      {/* 5. Command Center Lower Row: Upcoming Commitments & Statutory Sentinel */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* 2. Primary KPI Bar - Large, Typographically Commanding Numbers */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-neutral-300 bg-white">
         
-        {/* Upcoming Obligations Summary Card */}
-        <div className="bg-white border border-neutral-200 p-5 sm:p-6 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-            <div className="flex items-center space-x-2">
-              <CalendarClock className="w-4 h-4 text-neutral-700" />
-              <h3 className="font-display font-bold text-lg text-neutral-900">
-                {t('dashboard.upcomingCommitments', 'Upcoming Commitments & Outflows')}
-              </h3>
+        {/* KPI 01: Total Liquid Cash */}
+        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+          <div>
+            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+              {t('dashboard.totalLiquidCash', 'Total Liquid Cash')}
+            </span>
+            <div className="my-3 font-display text-3xl sm:text-4xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums">
+              <span className="text-2xl sm:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
+              {data.totalLiquidBalance.toLocaleString('en-IN')}
             </div>
-            <Link
-              href="/dashboard/obligations"
-              className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center space-x-1"
-            >
-              <span>{t('common.viewAll', 'View All')}</span>
-              <ArrowRight size={12} />
-            </Link>
           </div>
+          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span>Bank ledger balance</span>
+            <span className="font-bold text-neutral-900">Reconciled</span>
+          </div>
+        </div>
 
-          <div className="space-y-2.5 flex-1">
-            {upcomingEvents.length > 0 ? (
-              upcomingEvents.map((evt, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3 bg-neutral-50 hover:bg-neutral-100/80 transition-colors border border-neutral-100"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className="text-center px-2 py-1 bg-white border border-neutral-200 shrink-0">
-                      <span className="text-[10px] font-mono text-neutral-500 block">Day +{evt.day}</span>
-                      <span className="text-xs font-bold text-neutral-800">{evt.date.split('-').slice(1).join('/')}</span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-neutral-900">
-                        {evt.statutoryDrain || evt.events?.join(', ') || 'Scheduled Payment'}
-                      </p>
-                      <p className="text-[11px] text-neutral-400">
-                        {evt.statutoryDrain ? 'Statutory Tax Deadlines' : 'Vendor & Operational Outflows'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-xs font-bold font-mono text-neutral-900">
-                      -₹{(evt.outflow || 0).toLocaleString('en-IN')}
-                    </span>
-                    <span className="text-[10px] text-amber-700 font-medium block">Due in {evt.day}d</span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="p-6 text-center text-xs text-neutral-400">
-                No immediate payment obligations scheduled in the next 15 days.
+        {/* KPI 02: Spendable Cash */}
+        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+          <div>
+            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+              {t('dashboard.spendableCash', 'Spendable Cash')}
+            </span>
+            <div className="my-3 font-display text-3xl sm:text-4xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums">
+              <span className="text-2xl sm:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
+              {data.spendableLiquidity.toLocaleString('en-IN')}
+            </div>
+          </div>
+          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span>After ring-fenced lockbox</span>
+            <span className="font-bold text-emerald-700">Protected</span>
+          </div>
+        </div>
+
+        {/* KPI 03: Cash Runway */}
+        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+          <div>
+            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+              {t('dashboard.cashRunway', 'Cash Runway')}
+            </span>
+            <div className="my-3 flex items-baseline">
+              <div className={`font-display text-4xl sm:text-5xl lg:text-[50px] font-bold tracking-tight leading-none tabular-nums ${
+                data.daysToZero < 14 ? 'text-orange-600' : 'text-neutral-950'
+              }`}>
+                {data.daysToZero}
               </div>
-            )}
+              <span className="text-base sm:text-lg font-bold font-mono text-neutral-400 ml-2 tracking-wider uppercase">
+                {t('dashboard.days', 'Days')}
+              </span>
+            </div>
           </div>
-
-          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
-            <span>Next 15 Days Outflows:</span>
-            <span className="font-bold font-mono text-neutral-900">
-              ₹{(data.commitmentsNext15Days || 0).toLocaleString('en-IN')}
+          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span>Zero-cash depletion</span>
+            <span className={data.daysToZero < 14 ? 'text-orange-600 font-bold' : 'text-emerald-700 font-bold'}>
+              {data.daysToZero < 14 ? 'Low Runway' : 'Solvent Buffer'}
             </span>
           </div>
         </div>
 
-        {/* Statutory Tax & Lockbox Sentinel Card */}
-        <div className="bg-white border border-neutral-200 p-5 sm:p-6 flex flex-col justify-between space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-            <div className="flex items-center space-x-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <h3 className="font-display font-bold text-lg text-neutral-900">
-                {t('dashboard.statutoryTaxSentinel', 'Statutory Tax Lockbox Sentinel')}
-              </h3>
-            </div>
-            <Link
-              href="/dashboard/tax-compliance"
-              className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 flex items-center space-x-1"
-            >
-              <span>{t('common.taxProfile', 'Tax Profile')}</span>
-              <ArrowRight size={12} />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-neutral-50 border border-neutral-100">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                GST Reserved
-              </span>
-              <span className="font-display text-lg font-bold text-neutral-900 mt-0.5 block">
-                ₹{(data.statutoryBreakdown?.gst || 0).toLocaleString('en-IN')}
-              </span>
-              <span className="text-[10px] text-neutral-500">GSTR-3B monthly safe reserve</span>
-            </div>
-
-            <div className="p-3 bg-neutral-50 border border-neutral-100">
-              <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block">
-                TDS & PF/ESIC
-              </span>
-              <span className="font-display text-lg font-bold text-neutral-900 mt-0.5 block">
-                ₹{((data.statutoryBreakdown?.tds || 0) + (data.statutoryBreakdown?.pfEsic || 0)).toLocaleString('en-IN')}
-              </span>
-              <span className="text-[10px] text-neutral-500">Payroll & vendor withholding</span>
-            </div>
-          </div>
-
-          <div className="p-3 bg-amber-50/70 border border-amber-200 flex items-start space-x-3">
-            <Clock className="w-4 h-4 text-amber-700 mt-0.5 shrink-0" />
-            <div className="text-xs">
-              <p className="font-bold text-amber-900">Total Statutory Shield Reserved: ₹{(data.statutoryLockbox || 0).toLocaleString('en-IN')}</p>
-              <p className="text-[11px] text-amber-800 mt-0.5">
-                Automatically ring-fenced from spendable liquidity to protect your business against MCA penalties.
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
-            <span>Compliance Integrity:</span>
-            <span className="font-bold text-emerald-600 flex items-center space-x-1">
-              <ShieldCheck size={13} />
-              <span>100% Ring-Fenced</span>
+        {/* KPI 04: Operating Velocity */}
+        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+          <div>
+            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+              04 / {t('dashboard.operatingVelocity', 'Operating Velocity')}
             </span>
+            <div className="my-3 flex items-baseline">
+              <div className="font-display text-3xl sm:text-4xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums">
+                <span className="text-2xl sm:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
+                {data.netDailyBurn.toLocaleString('en-IN')}
+              </div>
+              <span className="text-xs font-bold font-mono text-neutral-400 ml-1.5 uppercase">
+                /day
+              </span>
+            </div>
           </div>
+          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+            <span>Net daily burn rate</span>
+            <span className="font-bold text-neutral-900">30d Avg</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* 3. Primary Centerpiece: Cash Flow Trajectory Graph (Zero gap continuation) */}
+      <section aria-label="Cash Flow Trajectory" className="bg-white">
+        <ForecastingCharts data={data} />
+      </section>
+
+      {/* 4. Side-By-Side Geometrical Grid: Upcoming Commitments & Liquidity Calendar */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-neutral-300 bg-white">
+        
+        {/* Left Column: Upcoming Commitments & Outflows */}
+        <div className="bg-white p-6 sm:p-8 flex flex-col justify-between space-y-6">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-200">
+              <div>
+                <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-neutral-400 block mb-0.5">
+                  01 / Commitments
+                </span>
+                <h3 className="font-display font-bold text-2xl text-neutral-950 tracking-tight">
+                  {t('dashboard.upcomingCommitments', 'Upcoming Commitments')}
+                </h3>
+              </div>
+              <Link
+                href="/dashboard/obligations"
+                className="inline-flex items-center px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wider text-neutral-950 bg-white border border-neutral-300 hover:border-neutral-950 hover:bg-neutral-50 transition-colors cursor-pointer"
+              >
+                <span>{t('common.viewAll', 'Manage All')}</span>
+                <ArrowRight size={12} className="ml-1.5" />
+              </Link>
+            </div>
+
+            {/* Big Outflows Summary Hero */}
+            <div className="p-4 bg-neutral-50 border border-neutral-200 flex items-baseline justify-between">
+              <div>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-500 block">
+                  Next 15 Days Outflows
+                </span>
+                <span className="font-display text-2xl sm:text-3xl font-bold text-neutral-950 tabular-nums">
+                  ₹{(data.commitmentsNext15Days || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+              <span className="font-mono text-[10.5px] text-neutral-500">
+                {upcomingEvents.length} obligations due
+              </span>
+            </div>
+
+            {/* Itemized Commitments List */}
+            <div className="space-y-2.5">
+              {upcomingEvents.length > 0 ? (
+                upcomingEvents.map((evt, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 bg-white border border-neutral-200 hover:border-neutral-950 transition-colors flex items-center justify-between gap-3 shadow-xs"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="text-center px-2 py-1 bg-neutral-900 text-white font-mono shrink-0">
+                        <span className="text-[9px] block uppercase text-neutral-400 font-bold">Day</span>
+                        <span className="text-xs font-bold leading-tight">+{evt.day}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-neutral-950 truncate">
+                          {evt.statutoryDrain || evt.events?.join(', ') || 'Scheduled Payment'}
+                        </p>
+                        <p className="text-[10.5px] text-neutral-500 font-mono mt-0.5">
+                          Date: {evt.date} • {evt.statutoryDrain ? 'Statutory Remittance' : 'Commercial Supplier'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-bold font-display text-neutral-950 block">
+                        -₹{(evt.outflow || 0).toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[10px] font-mono text-amber-700 font-bold">
+                        Due in {evt.day}d
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center text-xs text-neutral-400 font-mono border border-dashed border-neutral-200">
+                  No immediate payment obligations scheduled in the next 15 days.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-neutral-200 flex items-center justify-between text-xs font-mono text-neutral-500">
+            <span>Solvency ring-fence:</span>
+            <span className="font-bold text-emerald-700">₹{data.spendableLiquidity.toLocaleString('en-IN')} buffered</span>
+          </div>
+        </div>
+
+        {/* Right Column: Liquidity Calendar */}
+        <div className="bg-white">
+          <RiskCalendar data={data} />
         </div>
 
       </div>
@@ -342,4 +288,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
