@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import ObligationsWidget from '@/components/dashboard/ObligationsWidget';
 import type { FinancialMetricData } from '@/lib/financial-store';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 export default function ObligationsPage() {
   const [data, setData] = useState<FinancialMetricData | null>(null);
@@ -11,7 +12,7 @@ export default function ObligationsPage() {
   useEffect(() => {
     async function loadData() {
       try {
-        const res = await fetch('/api/dashboard/financial-data');
+        const res = await authenticatedFetch('/api/dashboard/financial-data');
         if (!res.ok) throw new Error('Failed to load financial records');
         const json = await res.json();
         setData(json);

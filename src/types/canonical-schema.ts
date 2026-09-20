@@ -96,8 +96,15 @@ export interface NormalizedDocumentRecord {
   fileName?: string;
   s3Key: string;
   fileType?: string;
+  purpose?: 'BANK_ACTIVITY' | 'PRODUCT_SALES' | 'CURRENT_INVENTORY' | 'PURCHASES_SUPPLIERS' | 'OPEN_OBLIGATIONS' | 'RECURRING_EXPENSES' | 'SUPPORTING_DOCUMENT';
+  category?: string;
+  detectedCategories?: string[];
   documentType?: 'BANK_STATEMENT' | 'INVOICE' | 'RECEIPT' | 'GST_CHALLAN' | 'OTHER' | string;
   status: 'PENDING' | 'PROCESSING' | 'EXTRACTED' | 'FAILED' | string;
+  validationStatus?: 'PENDING' | 'VALID' | 'NEEDS_REVIEW' | 'INVALID' | string;
+  validationIssues?: string[];
+  reportingPeriod?: { startDate?: string; endDate?: string; days?: number };
+  readinessLink?: string;
   extractedEntityCount?: number;
   rawMetadata?: Record<string, unknown>;
   errorMessage?: string;

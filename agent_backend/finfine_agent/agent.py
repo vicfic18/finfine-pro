@@ -20,10 +20,7 @@ from finfine_agent.observability import TerminalModelTrace, TerminalToolTrace
 from finfine_agent.tools import (
     create_analysis_skill_tool,
     create_financial_python_tool,
-    create_transactions_csv_tool,
-    get_latest_balance,
-    get_transactions,
-    get_upcoming_obligations,
+    create_financial_data_tools,
 )
 
 
@@ -74,13 +71,16 @@ def create_agent(
     agent_factory: Callable[..., Any] = Agent,
     trace: bool = True,
     session_manager: Any | None = None,
+    tenant_id: str,
 ) -> Any:
     """Build the local agent with financial reads and managed code execution."""
     resolved = settings or AgentSettings.from_environment()
     resolved_model = model or create_model(resolved)
     artifacts = artifact_store or LocalArtifactStore()
     executor = code_executor or create_code_executor(resolved, artifacts)
-    csv_tool = create_transactions_csv_tool(artifacts)
+    if not tenant_id.strip():
+        raise ValueError("tenant_id is required")
+    balance_tool, transactions_tool, obligations_tool, csv_tool = create_financial_data_tools(tenant_id, artifacts)
     code_tool = create_financial_python_tool(executor)
     skill_tool = create_analysis_skill_tool()
 
@@ -97,9 +97,9 @@ def create_agent(
         system_prompt=build_system_instructions(),
         tools=[
             skill_tool,
-            get_latest_balance,
-            get_transactions,
-            get_upcoming_obligations,
+            balance_tool,
+            transactions_tool,
+            obligations_tool,
             csv_tool,
             code_tool,
         ],
@@ -197,6 +197,7 @@ def run_chat(agent: Any, *, trace: bool = True) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the local FinFine Pro agent")
     parser.add_argument("question", nargs="?", help="Ask one question and exit")
+    parser.add_argument("--tenant-id", required=True, help="Authenticated merchant subject for local development")
     parser.add_argument(
         "--quiet",
         action="store_true",
@@ -206,7 +207,7 @@ def main() -> int:
 
     try:
         settings = AgentSettings.from_environment()
-        agent = create_agent(settings, trace=not args.quiet)
+        agent = create_agent(settings, trace=not args.quiet, tenant_id=args.tenant_id)
         if args.question:
             answer = ask(agent, args.question)
             if args.quiet:

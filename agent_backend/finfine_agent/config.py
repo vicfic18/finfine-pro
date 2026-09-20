@@ -19,7 +19,6 @@ class Settings:
     """Names and AWS settings required to read FinFine data."""
 
     aws_region: str
-    tenant_id: str
     document_table_name: str
     transaction_table_name: str
     obligation_table_name: str
@@ -37,6 +36,7 @@ class Settings:
     purchase_order_table_name: str | None = None
     purchase_order_line_item_table_name: str | None = None
     recurring_expense_table_name: str | None = None
+    expected_receivable_table_name: str | None = None
     aws_profile: str | None = None
 
     @classmethod
@@ -44,7 +44,6 @@ class Settings:
         """Load settings and report all missing required values together."""
         _load_local_environment()
         required = {
-            "FINFINE_TENANT_ID": os.getenv("FINFINE_TENANT_ID"),
             "DOCUMENT_RECORD_TABLE_NAME": os.getenv("DOCUMENT_RECORD_TABLE_NAME"),
             "TRANSACTION_TABLE_NAME": os.getenv("TRANSACTION_TABLE_NAME"),
             "OBLIGATION_TABLE_NAME": os.getenv("OBLIGATION_TABLE_NAME"),
@@ -56,7 +55,6 @@ class Settings:
 
         return cls(
             aws_region=os.getenv("AWS_REGION", "ap-south-1"),
-            tenant_id=required["FINFINE_TENANT_ID"] or "",
             document_table_name=required["DOCUMENT_RECORD_TABLE_NAME"] or "",
             transaction_table_name=required["TRANSACTION_TABLE_NAME"] or "",
             obligation_table_name=required["OBLIGATION_TABLE_NAME"] or "",
@@ -74,6 +72,7 @@ class Settings:
             purchase_order_table_name=os.getenv("PURCHASE_ORDER_TABLE_NAME"),
             purchase_order_line_item_table_name=os.getenv("PURCHASE_ORDER_LINE_ITEM_TABLE_NAME"),
             recurring_expense_table_name=os.getenv("RECURRING_EXPENSE_TABLE_NAME"),
+            expected_receivable_table_name=os.getenv("EXPECTED_RECEIVABLE_TABLE_NAME"),
             aws_profile=os.getenv("AWS_PROFILE") or None,
         )
 

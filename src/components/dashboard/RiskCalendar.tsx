@@ -8,6 +8,18 @@ interface RiskCalendarProps {
   data: FinancialMetricData;
 }
 
+type PinchPoint = FinancialMetricData['pinchPoints'][number];
+type TrajectoryPoint = FinancialMetricData['trajectory60Days'][number];
+type CalendarCell = {
+  empty: boolean;
+  key: string;
+  day?: number;
+  fullDate?: string;
+  pinch?: PinchPoint;
+  traj?: TrajectoryPoint;
+  risk?: 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE';
+};
+
 export default function RiskCalendar({ data }: RiskCalendarProps) {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 5;
@@ -24,19 +36,19 @@ export default function RiskCalendar({ data }: RiskCalendarProps) {
   const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
 
   // Map pinch points and daily events by date string "YYYY-MM-DD"
-  const pinchMap = new Map<string, any>();
+  const pinchMap = new Map<string, PinchPoint>();
   (data?.pinchPoints || []).forEach((p) => {
     pinchMap.set(p.date, p);
   });
 
-  const trajectoryMap = new Map<string, any>();
+  const trajectoryMap = new Map<string, TrajectoryPoint>();
   (data?.trajectory60Days || []).forEach((t) => {
     trajectoryMap.set(t.date, t);
   });
 
   // Calendar cells
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const calendarCells = [];
+  const calendarCells: CalendarCell[] = [];
 
   // Empty leading days
   for (let i = 0; i < firstDayIndex; i++) {

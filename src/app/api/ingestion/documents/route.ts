@@ -1,218 +1,100 @@
-import { NextResponse } from 'next/server';
+import { existsSync, readFileSync } from 'fs';
+import path from 'path';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { NextResponse } from 'next/server';
+import { AuthenticationConfigurationError, AuthenticationError, requirePrincipal } from '@/lib/server-auth';
+import { documentExtractionView } from '@/lib/document-presentation';
 
-const region = process.env.AWS_REGION || 'ap-south-1';
-const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
-const docTableName = process.env.DOCUMENT_RECORD_TABLE_NAME || 'DocumentRecord-ifsueqzwybf6nau7duulv5qweq-NONE';
+export const runtime = 'nodejs';
 
-const dynamoClient = new DynamoDBClient({ region });
-const docClient = DynamoDBDocumentClient.from(dynamoClient, {
+type Outputs = {
+  auth?: { aws_region?: string };
+  data?: { aws_region?: string };
+  custom?: Record<string, string>;
+};
+function loadOutputs(): Outputs {
+  try {
+    const file = path.join(process.cwd(), 'amplify_outputs.json');
+    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Outputs) : {};
+  } catch {
+    return {};
+  }
+}
+
+const outputs = loadOutputs();
+const tableName = process.env.DOCUMENT_RECORD_TABLE_NAME || outputs.custom?.documentRecordTableName;
+const region = process.env.AWS_REGION
+  || outputs.data?.aws_region
+  || outputs.auth?.aws_region
+  || outputs.custom?.awsRegion
+  || 'ap-south-1';
+const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
   marshallOptions: { removeUndefinedValues: true },
 });
 
-export interface BankStatementDoc {
-  id: string;
-  tenantId: string;
-  fileName: string;
-  s3Key: string;
-  fileType: string;
-  documentType: 'BANK_STATEMENT';
-  status: 'PENDING' | 'PROCESSING' | 'EXTRACTED' | 'FAILED';
-  extractedEntityCount: number;
-  processedAt: string;
-  createdAt: string;
-  bankName: string;
-  accountNumberMasked: string;
-  statementPeriod: {
-    startDate: string;
-    endDate: string;
+function parseMetadata(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) as Record<string, unknown>; } catch { return {}; }
+  }
+  return {};
+}
+
+function publicDocument(item: Record<string, unknown>) {
+  const metadata = parseMetadata(item.rawMetadata);
+  return {
+    id: item.id,
+    fileName: item.fileName || 'document.pdf',
+    purpose: item.purpose || metadata.purpose || 'SUPPORTING_DOCUMENT',
+    category: item.category || metadata.category || 'OTHER',
+    detectedCategories: item.detectedCategories || metadata.detectedCategories || [],
+    status: item.status || 'PENDING',
+    validationStatus: item.validationStatus || metadata.validationStatus || 'PENDING',
+    validationIssues: item.validationIssues || metadata.validationIssues || [],
+    reportingPeriod: item.reportingPeriod || metadata.reportingPeriod || (item.reportingStartDate || item.reportingEndDate ? { startDate: item.reportingStartDate, endDate: item.reportingEndDate } : null),
+    extractedEntityCount: item.extractedEntityCount ?? 0,
+    ...documentExtractionView(metadata),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    processedAt: item.processedAt,
+    errorMessage: item.errorMessage,
   };
-  openingBalance: number;
-  closingBalance: number;
-  totalInflow: number;
-  totalOutflow: number;
-  transactionCount: number;
-  reconciliationStatus: string;
-  rawMetadata?: any;
 }
 
-export interface BillInvoiceDoc {
-  id: string;
-  tenantId: string;
-  fileName: string;
-  s3Key: string;
-  fileType: string;
-  documentType: 'INVOICE' | 'RECEIPT' | 'GST_CHALLAN' | 'VENDOR_BILL';
-  status: 'PENDING' | 'PROCESSING' | 'EXTRACTED' | 'FAILED';
-  extractedEntityCount: number;
-  processedAt: string;
-  createdAt: string;
-  invoiceNumber: string;
-  counterpartyName: string;
-  counterpartyType: 'CUSTOMER' | 'VENDOR' | 'TAX_AUTHORITY';
-  category: 'VENDOR_BILL' | 'CUSTOMER_INVOICE' | 'UTILITY_BILL' | 'STATUTORY_TAX';
-  gstin?: string;
-  amount: number;
-  taxAmount?: number;
-  invoiceDate: string;
-  dueDate?: string;
-  matchedBankRef?: string;
-  reconciliationStatus: string;
-  rawMetadata?: any;
-}
-
-const obTableName = process.env.OBLIGATION_TABLE_NAME || 'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    let rawDbItems: any[] = [];
-    let rawObligations: any[] = [];
-
-    if (docTableName) {
-      try {
-        const res = await docClient.send(
-          new ScanCommand({
-            TableName: docTableName,
-            FilterExpression: 'tenantId = :tid',
-            ExpressionAttributeValues: { ':tid': tenantId },
-          })
-        );
-        rawDbItems = res.Items || [];
-      } catch (err) {
-        console.warn('Could not scan DocumentRecord table in DynamoDB:', err);
-      }
-    }
-
-    if (obTableName) {
-      try {
-        const res = await docClient.send(
-          new ScanCommand({
-            TableName: obTableName,
-            FilterExpression: 'tenantId = :tid',
-            ExpressionAttributeValues: { ':tid': tenantId },
-          })
-        );
-        rawObligations = res.Items || [];
-      } catch (err) {
-        console.warn('Could not scan Obligation table in DynamoDB:', err);
-      }
-    }
-
-    // Index obligations by documentId
-    const obligationsByDocId: Record<string, any> = {};
-    for (const obl of rawObligations) {
-      if (obl.documentId) {
-        obligationsByDocId[obl.documentId] = obl;
-      }
-    }
-
-    // Filter out snapshot items
-    const docItems = rawDbItems.filter(
-      (item) => item.documentType !== 'DASHBOARD_SNAPSHOT' && !item.id?.startsWith('snapshot#')
-    );
-
-    const bankStatements: BankStatementDoc[] = [];
-    const billsAndInvoices: BillInvoiceDoc[] = [];
-
-    // Map DynamoDB items into typed structures
-    for (const item of docItems) {
-      const matchingObl = obligationsByDocId[item.id];
-      let meta: any = {};
-      if (item.rawMetadata) {
-        try {
-          meta = typeof item.rawMetadata === 'string' ? JSON.parse(item.rawMetadata) : item.rawMetadata;
-        } catch {
-          meta = {};
-        }
-      }
-
-      if (
-        item.documentType === 'BANK_STATEMENT' ||
-        item.fileName?.toLowerCase().includes('statement') ||
-        item.fileName?.toLowerCase().includes('bank')
-      ) {
-        const accNum = meta.accountNumber || meta.accountNumberMasked || 'Account';
-        const maskedAcc = accNum.length > 4 ? `•••${accNum.slice(-4)}` : accNum;
-
-        bankStatements.push({
-          id: item.id,
-          tenantId: item.tenantId || tenantId,
-          fileName: item.fileName || 'bank_statement.pdf',
-          s3Key: item.s3Key || '',
-          fileType: item.fileType || 'application/pdf',
-          documentType: 'BANK_STATEMENT',
-          status: (item.status as any) || 'EXTRACTED',
-          extractedEntityCount: item.extractedEntityCount ?? (meta.summary?.transactionCount || 0),
-          processedAt: item.processedAt || item.createdAt || new Date().toISOString(),
-          createdAt: item.createdAt || new Date().toISOString(),
-          bankName: meta.bankOrIssuerName || meta.bankName || 'Bank',
-          accountNumberMasked: maskedAcc,
-          statementPeriod: {
-            startDate: meta.statementPeriod?.startDate || '',
-            endDate: meta.statementPeriod?.endDate || '',
-          },
-          openingBalance: meta.openingBalance ?? 0,
-          closingBalance: meta.closingBalance ?? 0,
-          totalInflow: meta.summary?.totalInflow ?? 0,
-          totalOutflow: meta.summary?.totalOutflow ?? 0,
-          transactionCount: meta.summary?.transactionCount ?? (item.extractedEntityCount || 0),
-          reconciliationStatus: 'Matched',
-          rawMetadata: meta,
-        });
-      } else {
-        // Invoice / Bill / Receipt / Tax Challan
-        billsAndInvoices.push({
-          id: item.id,
-          tenantId: item.tenantId || tenantId,
-          fileName: item.fileName || 'document.pdf',
-          s3Key: item.s3Key || '',
-          fileType: item.fileType || 'application/pdf',
-          documentType: (item.documentType as any) || 'INVOICE',
-          status: (item.status as any) || 'EXTRACTED',
-          extractedEntityCount: item.extractedEntityCount || 1,
-          processedAt: item.processedAt || item.createdAt || new Date().toISOString(),
-          createdAt: item.createdAt || new Date().toISOString(),
-          invoiceNumber: meta.invoiceNumber || matchingObl?.title?.slice(0, 20) || item.id,
-          counterpartyName: matchingObl?.counterpartyName || meta.counterpartyName || 'Counterparty',
-          counterpartyType:
-            matchingObl?.type === 'RECEIVABLE'
-              ? 'CUSTOMER'
-              : matchingObl?.isStatutory
-              ? 'TAX_AUTHORITY'
-              : (meta.counterpartyType as any) || 'VENDOR',
-          category: matchingObl?.category || (meta.category as any) || 'VENDOR_BILL',
-          gstin: matchingObl?.statutoryId || meta.gstin,
-          amount: Number(matchingObl?.amount ?? meta.amount ?? 0),
-          taxAmount: Number(meta.taxAmount || 0),
-          invoiceDate: meta.invoiceDate || new Date().toISOString().slice(0, 10),
-          dueDate: matchingObl?.dueDate || meta.dueDate,
-          matchedBankRef: meta.matchedBankRef,
-          reconciliationStatus: meta.reconciliationStatus || 'EXTRACTED',
-          rawMetadata: meta,
-        });
-      }
-    }
-
-    // Sort descending by processedAt or createdAt
-    bankStatements.sort((a, b) => (b.processedAt || '').localeCompare(a.processedAt || ''));
-    billsAndInvoices.sort((a, b) => (b.processedAt || '').localeCompare(a.processedAt || ''));
-
-    return NextResponse.json({
-      tenantId,
-      bankStatements,
-      billsAndInvoices,
-      counts: {
-        bankStatements: bankStatements.length,
-        billsAndInvoices: billsAndInvoices.length,
-        totalDocuments: bankStatements.length + billsAndInvoices.length,
-      },
-    });
-  } catch (err: any) {
-    console.error('Error loading ingestion documents:', err);
-    return NextResponse.json(
-      { error: 'Failed to retrieve ingestion documents', details: err?.message || String(err) },
-      { status: 500 }
-    );
+    const principal = await requirePrincipal(request);
+    const tenantId = principal;
+    if (!tableName) return NextResponse.json({ documents: [], counts: { total: 0 } });
+    const items: Record<string, unknown>[] = [];
+    let exclusiveStartKey: Record<string, unknown> | undefined;
+    do {
+      const response = await client.send(new ScanCommand({
+        TableName: tableName,
+        FilterExpression: 'tenantId = :tenantId AND (attribute_not_exists(documentType) OR documentType <> :snapshot)',
+        ExpressionAttributeValues: { ':tenantId': tenantId, ':snapshot': 'DASHBOARD_SNAPSHOT' },
+        ExclusiveStartKey: exclusiveStartKey,
+      }));
+      items.push(...((response.Items || []) as Record<string, unknown>[]));
+      exclusiveStartKey = response.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (exclusiveStartKey);
+    const documents = items
+      .filter((item) => !String(item.id || '').startsWith('snapshot#'))
+      .map(publicDocument)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    const counts = documents.reduce<Record<string, number>>((acc, document) => {
+      acc.total = (acc.total || 0) + 1;
+      const status = String(document.status || 'PENDING');
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, { total: 0 });
+    return NextResponse.json({ documents, counts });
+  } catch (error) {
+    console.error('Failed to load ingestion documents', error);
+    if (error instanceof AuthenticationError) return NextResponse.json({ error: error.message }, { status: 401 });
+    if (error instanceof AuthenticationConfigurationError) return NextResponse.json({ error: error.message }, { status: 503 });
+    return NextResponse.json({ error: 'Failed to retrieve ingestion documents' }, { status: 500 });
   }
 }

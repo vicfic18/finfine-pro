@@ -128,7 +128,7 @@ class RuntimeService:
             if existing is not None:
                 await self._record_turn(principal.subject, record, request_id, request.prompt, existing.answer)
                 return AgentAnswer(requestId=request.request_id, sessionId=UUID(existing.session_id), answer=existing.answer)
-            answer = await self._call_answerer(answerer, request.prompt, record=record, request_id=request_id, http_request=http_request)
+            answer = await self._call_answerer(answerer, request.prompt, record=record, subject=principal.subject, request_id=request_id, http_request=http_request)
             completed = self.registry.put_completed(CompletedResult(request_id, record.public_id, prompt_hash, answer), subject=principal.subject)
             self.registry.touch(record)
             await self._record_turn(principal.subject, record, request_id, request.prompt, completed.answer)
@@ -160,7 +160,7 @@ class RuntimeService:
                 answer=answer,
             )
 
-    async def _call_answerer(self, answerer: Answerer, question: str, *, record: SessionRecord, request_id: str, http_request: Request | None) -> str:
+    async def _call_answerer(self, answerer: Answerer, question: str, *, record: SessionRecord, subject: str, request_id: str, http_request: Request | None) -> str:
         kwargs: dict[str, Any] = {}
         try:
             parameters = inspect.signature(answerer).parameters
@@ -172,6 +172,8 @@ class RuntimeService:
             kwargs["request_id"] = request_id
         if "runtime_settings" in parameters:
             kwargs["runtime_settings"] = self.settings
+        if "tenant_id" in parameters:
+            kwargs["tenant_id"] = subject
         if "http_request" in parameters:
             kwargs["http_request"] = http_request
         result = answerer(question, **kwargs)
@@ -186,7 +188,7 @@ def get_runtime_service(settings: RuntimeSettings) -> RuntimeService:
     return RuntimeService(settings)
 
 
-async def run_agent_question(question: str, *, session_record: SessionRecord, request_id: str, runtime_settings: RuntimeSettings, http_request: Request | None = None) -> str:
+async def run_agent_question(question: str, *, session_record: SessionRecord, tenant_id: str, request_id: str, runtime_settings: RuntimeSettings, http_request: Request | None = None) -> str:
     """Build a fresh agent for this request and persist through Strands S3 storage."""
     agent_settings = AgentSettings.from_environment()
     boto_session = boto3.Session(profile_name=runtime_settings.aws_profile, region_name=runtime_settings.session_region)
@@ -200,7 +202,7 @@ async def run_agent_question(question: str, *, session_record: SessionRecord, re
         boto_session=boto_session,
     )
     manager = SnapshotSessionManager(session_record.storage_id, storage=storage)
-    agent = create_agent(agent_settings, session_manager=manager, trace=False)
+    agent = create_agent(agent_settings, session_manager=manager, trace=False, tenant_id=tenant_id)
     cancel_signal = Event()
     disconnect_task: asyncio.Task[None] | None = None
     if http_request is not None:

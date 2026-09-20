@@ -6,7 +6,4 @@ export const documentExtractor = defineFunction({
   timeoutSeconds: 120,
   memoryMB: 1024,
   runtime: 22,
-  environment: {
-    BEDROCK_MODEL_ID: 'nvidia.nemotron-nano-12b-v2',
-  },
 });

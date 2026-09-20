@@ -12,13 +12,6 @@ export default function VoiceSearchHeader({ onQuickSimulate }: VoiceSearchHeader
   const [transcript, setTranscript] = useState('');
   const [voiceReply, setVoiceReply] = useState<string | null>(null);
 
-  const sampleVoicePrompts = [
-    'Can I buy ₹50,000 new stock today?',
-    'What if Sharmaji delays payment by 7 days?',
-    'GST tax kab bharna hai?',
-    'Show my free spendable cash',
-  ];
-
   const handleMicToggle = () => {
     if (isListening) {
       setIsListening(false);
@@ -39,21 +32,6 @@ export default function VoiceSearchHeader({ onQuickSimulate }: VoiceSearchHeader
         onQuickSimulate(40000, 0);
       }
     }, 2400);
-  };
-
-  const handlePromptClick = (text: string) => {
-    setTranscript(text);
-    if (text.includes('50,000')) {
-      setVoiceReply('Spending ₹50,000 today will breach your bank balance before the Oct 20 GSTR-3B tax payment. Consider paying ₹25,000 now and ₹25,000 after Oct 14.');
-      if (onQuickSimulate) onQuickSimulate(50000, 0);
-    } else if (text.includes('Sharmaji')) {
-      setVoiceReply('If Sharmaji delays payment by 7 days, your cash buffer dips by ₹35,000 on Oct 16. The solver suggests requesting a partial advance of ₹15,000 via WhatsApp.');
-      if (onQuickSimulate) onQuickSimulate(0, 7);
-    } else if (text.includes('GST')) {
-      setVoiceReply('GSTR-3B payment of ₹42,000 is due on October 20 (13 days left). Your tax lockbox has ₹42,000 safely reserved.');
-    } else {
-      setVoiceReply('Your total bank balance is ₹82,350. Of this, ₹74,700 is locked for GST/TDS/PF liabilities, leaving ₹7,650 in immediately spendable cash.');
-    }
   };
 
   return (

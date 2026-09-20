@@ -6,6 +6,7 @@ import { getCurrentUser, signOut, fetchUserAttributes } from 'aws-amplify/auth';
 import Link from 'next/link';
 import { LayoutDashboard, CalendarClock, MessageSquare, LogOut, UploadCloud, Settings } from 'lucide-react';
 import clsx from 'clsx';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 export default function DashboardLayout({
   children,
@@ -29,15 +30,28 @@ export default function DashboardLayout({
         } catch {
           setUserEmail(user.username || 'Store Owner');
         }
+        const onboardingResponse = await authenticatedFetch('/api/onboarding/status');
+        if (onboardingResponse.status === 401) {
+          await signOut();
+          router.replace('/login');
+          return;
+        }
+        if (onboardingResponse.ok) {
+          const payload = await onboardingResponse.json();
+          if (payload.onboarding?.status !== 'COMPLETED' && pathname !== '/onboarding') {
+            router.replace('/onboarding');
+            return;
+          }
+        }
       } catch {
-        // Graceful fallback for local development & review
-        setUserEmail('Store Owner (Active)');
+        router.replace('/login');
+        return;
       } finally {
         setLoading(false);
       }
     }
     loadUser();
-  }, [router]);
+  }, [router, pathname]);
 
   const handleSignOut = async () => {
     try {
@@ -69,7 +83,7 @@ export default function DashboardLayout({
   ];
 
   return (
-    <div className="flex h-screen bg-white text-[#111215] overflow-hidden select-none font-sans flex-col sm:flex-row">
+    <div className="flex h-screen bg-white text-[#111215] overflow-hidden font-sans flex-col sm:flex-row">
       
       {/* Desktop Sidebar (Left) */}
       <aside className="hidden sm:flex flex-col w-20 border-r border-neutral-200 bg-white items-center py-6 justify-between z-20">

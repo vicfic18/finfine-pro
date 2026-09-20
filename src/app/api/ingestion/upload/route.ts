@@ -1,384 +1,172 @@
+import { randomUUID } from 'crypto';
+import { existsSync, readFileSync } from 'fs';
+import path from 'path';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DeleteCommand, DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
-import * as fs from 'fs';
-import * as path from 'path';
-import { invalidateDashboardCache, getMerchantSettings } from '@/lib/financial-store';
-import {
-  generateAllSampleDocuments,
-  SAMPLE_DOCUMENTS_REGISTRY,
-} from '../../../../../scripts/generate-sample-data';
+import { AuthenticationConfigurationError, AuthenticationError, requirePrincipal } from '@/lib/server-auth';
+import { requireCompletedOnboarding } from '@/lib/onboarding-store';
 
-const region = process.env.AWS_REGION || 'ap-south-1';
-const bucketName =
-  process.env.S3_BUCKET_NAME || 'amplify-finfinepro-vicfic-finfinedocumentstoragebu-nm3ks1cueqmt';
-const tenantId = process.env.FINFINE_TENANT_ID || 'msme-001';
+export const runtime = 'nodejs';
 
-// Load deployed Lambda & Table ARNs from amplify_outputs.json if available
-let outputsCustom: Record<string, any> = {};
-try {
-  const outputsPath = path.join(process.cwd(), 'amplify_outputs.json');
-  if (fs.existsSync(outputsPath)) {
-    const outputs = JSON.parse(fs.readFileSync(outputsPath, 'utf8'));
-    outputsCustom = outputs.custom || {};
-  }
-} catch (e) {
-  // Non-fatal
-}
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+const PDF_SIGNATURE = '%PDF-';
+const ALLOWED_CATEGORIES = new Set([
+  'BANK_ACTIVITY',
+  'PRODUCT_SALES',
+  'CURRENT_INVENTORY',
+  'PURCHASES_SUPPLIERS',
+  'PURCHASES',
+  'OPEN_OBLIGATIONS',
+  'RECURRING_EXPENSES',
+]);
+const ALLOWED_PURPOSES = new Set([
+  'ONBOARDING_BASELINE',
+  'PERIODIC_UPDATE',
+]);
 
-const extractorArn =
-  process.env.DOCUMENT_EXTRACTOR_FUNCTION_ARN || outputsCustom.documentExtractorLambdaArn;
-const normalizerArn =
-  process.env.INGESTION_NORMALIZER_FUNCTION_ARN || outputsCustom.ingestionNormalizerLambdaArn;
+type Outputs = {
+  auth?: { aws_region?: string };
+  data?: { aws_region?: string };
+  custom?: Record<string, string>;
+  storage?: { bucket_name?: string };
+};
 
-// Canonical DynamoDB Tables
-const docTableName =
-  process.env.DOCUMENT_RECORD_TABLE_NAME ||
-  outputsCustom.documentRecordTableName ||
-  'DocumentRecord-ifsueqzwybf6nau7duulv5qweq-NONE';
-const txnTableName =
-  process.env.TRANSACTION_TABLE_NAME ||
-  outputsCustom.transactionTableName ||
-  'Transaction-ifsueqzwybf6nau7duulv5qweq-NONE';
-const oblTableName =
-  process.env.OBLIGATION_TABLE_NAME ||
-  outputsCustom.obligationTableName ||
-  'Obligation-ifsueqzwybf6nau7duulv5qweq-NONE';
-const prodTableName =
-  process.env.PRODUCT_TABLE_NAME ||
-  outputsCustom.productTableName ||
-  'Product-ifsueqzwybf6nau7duulv5qweq-NONE';
-const purchaseTableName =
-  process.env.PURCHASE_TABLE_NAME ||
-  outputsCustom.purchaseTableName ||
-  'Purchase-ifsueqzwybf6nau7duulv5qweq-NONE';
-const purchaseLineItemTableName =
-  process.env.PURCHASE_LINE_ITEM_TABLE_NAME ||
-  outputsCustom.purchaseLineItemTableName ||
-  'PurchaseLineItem-ifsueqzwybf6nau7duulv5qweq-NONE';
-const cashPositionTableName =
-  process.env.CASH_POSITION_TABLE_NAME ||
-  outputsCustom.cashPositionTableName ||
-  'CashPositionSnapshot-ifsueqzwybf6nau7duulv5qweq-NONE';
-const supplierProfileTableName =
-  process.env.SUPPLIER_PROFILE_TABLE_NAME ||
-  outputsCustom.supplierProfileTableName ||
-  'SupplierProfile-ifsueqzwybf6nau7duulv5qweq-NONE';
-
-const s3Client = new S3Client({ region });
-const lambdaClient = new LambdaClient({ region });
-
-async function runDocumentExtractor(payload: any) {
-  if (extractorArn) {
-    try {
-      console.log(`[Ingestion API] Invoking remote AWS Lambda Document Extractor (${extractorArn})...`);
-      const res = await lambdaClient.send(
-        new InvokeCommand({
-          FunctionName: extractorArn,
-          InvocationType: 'RequestResponse',
-          Payload: Buffer.from(JSON.stringify(payload)),
-        })
-      );
-      if (res.Payload) {
-        const payloadStr = Buffer.from(res.Payload).toString('utf-8');
-        const parsed = JSON.parse(payloadStr);
-        if (res.FunctionError) {
-          console.warn('[Ingestion API] Remote Lambda returned error:', parsed);
-          throw new Error(parsed.errorMessage || 'Remote Lambda execution failed');
-        }
-        console.log('[Ingestion API] Remote Lambda Document Extractor executed successfully.');
-        return parsed;
-      }
-    } catch (err: any) {
-      console.warn(
-        `[Ingestion API] Remote Lambda invocation skipped/failed (${err.message}). Executing serverless extractor handler directly.`
-      );
-    }
-  }
-
-  const { handler: extractorHandler } = await import(
-    '../../../../../amplify/functions/document-extractor/handler'
-  );
-  return await (extractorHandler as any)(payload);
-}
-
-async function runIngestionNormalizer(payload: any) {
-  if (normalizerArn) {
-    try {
-      console.log(`[Ingestion API] Invoking remote AWS Lambda Ingestion Normalizer (${normalizerArn})...`);
-      const res = await lambdaClient.send(
-        new InvokeCommand({
-          FunctionName: normalizerArn,
-          InvocationType: 'RequestResponse',
-          Payload: Buffer.from(JSON.stringify(payload)),
-        })
-      );
-      if (res.Payload) {
-        const payloadStr = Buffer.from(res.Payload).toString('utf-8');
-        const parsed = JSON.parse(payloadStr);
-        if (res.FunctionError) {
-          console.warn('[Ingestion API] Remote Normalizer Lambda returned error:', parsed);
-          throw new Error(parsed.errorMessage || 'Remote Normalizer Lambda failed');
-        }
-        console.log('[Ingestion API] Remote Lambda Ingestion Normalizer executed successfully.');
-        return parsed;
-      }
-    } catch (err: any) {
-      console.warn(
-        `[Ingestion API] Remote Normalizer Lambda invocation skipped/failed (${err.message}). Executing serverless normalizer handler directly.`
-      );
-    }
-  }
-
-  const { handler: normalizerHandler } = await import(
-    '../../../../../amplify/functions/ingestion-normalizer/handler'
-  );
-  return await (normalizerHandler as any)(payload);
-}
-
-/**
- * Ingests a single PDF file buffer into S3 and runs the extractor + normalizer pipeline
- */
-async function ingestPdfBuffer(
-  fileBuffer: Buffer,
-  fileName: string,
-  docType: 'BANK_STATEMENT' | 'INVOICE' | 'GST_CHALLAN',
-  manualMetadata: any = {}
-) {
-  const timestamp = Date.now() + Math.floor(Math.random() * 1000);
-  const documentId = docType === 'BANK_STATEMENT' ? `stmt-${timestamp}` : `inv-${timestamp}`;
-  const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const s3Key = `public/tenants/${tenantId}/raw/${documentId}-${sanitizedFileName}`;
-
-  // 1. Upload to S3
-  await s3Client.send(
-    new PutObjectCommand({
-      Bucket: bucketName,
-      Key: s3Key,
-      Body: fileBuffer,
-      ContentType: 'application/pdf',
-      Metadata: {
-        tenantId,
-        documentId,
-        documentType: docType,
-      },
-    })
-  );
-
-  // 2. Set Env vars
-  process.env.DOCUMENT_RECORD_TABLE_NAME = docTableName;
-  process.env.TRANSACTION_TABLE_NAME = txnTableName;
-  process.env.OBLIGATION_TABLE_NAME = oblTableName;
-  process.env.PRODUCT_TABLE_NAME = prodTableName;
-  process.env.PURCHASE_TABLE_NAME = purchaseTableName;
-  process.env.PURCHASE_LINE_ITEM_TABLE_NAME = purchaseLineItemTableName;
-  process.env.CASH_POSITION_TABLE_NAME = cashPositionTableName;
-  process.env.SUPPLIER_PROFILE_TABLE_NAME = supplierProfileTableName;
-
-  // 3. Extract & Normalize
-  const extractOutput = await runDocumentExtractor({
-    bucket: bucketName,
-    key: s3Key,
-    tenantId,
-    documentId,
-    documentType: docType,
-    manualMetadata,
-  });
-
-  const pipelineResult = await runIngestionNormalizer(extractOutput);
-  return { documentId, s3Key, fileName: sanitizedFileName, pipelineResult };
-}
-
-/**
- * Ingests the complete MSME enterprise test dataset ONLY through real PDF documents
- * processed via Amazon S3 -> Document Extractor -> Ingestion Normalizer -> DynamoDB.
- * Absolutely ZERO direct database seeding.
- */
-async function ingestCompleteEnterpriseSuite() {
-  const settings = await getMerchantSettings(tenantId);
-  const businessName = settings.businessName || 'My Business';
-
-  // Ensure all sample PDFs exist on disk and reflect the business name
-  await generateAllSampleDocuments(businessName);
-
-  const sampleDir = path.join(process.cwd(), 'sample_data');
-  const results = [];
-
-  for (const item of SAMPLE_DOCUMENTS_REGISTRY) {
-    const pdfPath = path.join(sampleDir, item.fileName);
-    if (fs.existsSync(pdfPath)) {
-      const pdfBuffer = fs.readFileSync(pdfPath);
-      console.log(`[Ingestion Pipeline] Ingesting PDF: ${item.fileName} (${item.docType})...`);
-      const res = await ingestPdfBuffer(pdfBuffer, item.fileName, item.docType);
-      results.push({
-        id: item.id,
-        fileName: item.fileName,
-        documentId: res.documentId,
-        summary: res.pipelineResult?.summary,
-      });
-    }
-  }
-
-  invalidateDashboardCache();
-  return results;
-}
-
-export async function GET() {
-  return NextResponse.json({
-    availableSampleDocuments: SAMPLE_DOCUMENTS_REGISTRY.map((d) => ({
-      id: d.id,
-      displayName: d.displayName,
-      docType: d.docType,
-      fileName: d.fileName,
-      description: d.description,
-    })),
-  });
-}
-
-export async function POST(request: Request) {
+function loadOutputs(): Outputs {
   try {
-    const contentType = request.headers.get('content-type') || '';
+    const file = path.join(process.cwd(), 'amplify_outputs.json');
+    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Outputs) : {};
+  } catch {
+    return {};
+  }
+}
 
-    // -------------------------------------------------------------------------
-    // A. JSON Payload (Quick Sample Ingestion)
-    // -------------------------------------------------------------------------
-    if (contentType.includes('application/json')) {
-      const body = await request.json();
+const outputs = loadOutputs();
+const region = process.env.AWS_REGION
+  || outputs.data?.aws_region
+  || outputs.auth?.aws_region
+  || outputs.custom?.awsRegion
+  || 'ap-south-1';
+const bucketName = process.env.S3_BUCKET_NAME || outputs.storage?.bucket_name;
+const documentTableName = process.env.DOCUMENT_RECORD_TABLE_NAME || outputs.custom?.documentRecordTableName;
+const s3Client = new S3Client({ region });
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region }), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
-      if (body.useSample || body.sampleSet === 'COMPLETE') {
-        const sampleType = body.sampleType || 'COMPLETE';
-        const sampleDir = path.join(process.cwd(), 'sample_data');
-        const settings = await getMerchantSettings(tenantId);
-        const businessName = settings.businessName || 'My Business';
+function cleanFileName(name: string): string {
+  const basename = name.split(/[\\/]/).pop() || 'document.pdf';
+  const normalized = basename.normalize('NFKC').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const withoutTraversal = normalized.replace(/\.\.+/g, '.');
+  return withoutTraversal.toLowerCase().endsWith('.pdf')
+    ? withoutTraversal.slice(0, 180)
+    : `${withoutTraversal.slice(0, 176)}.pdf`;
+}
 
-        if (sampleType === 'COMPLETE' || !body.sampleType) {
-          console.log('[Ingestion API] Ingesting complete MSME PDF test suite (14 documents)...');
-          const results = await ingestCompleteEnterpriseSuite();
-          invalidateDashboardCache();
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
+}
 
-          return NextResponse.json({
-            success: true,
-            sampleType: 'COMPLETE',
-            documentsProcessed: results.length,
-            message: `All ${results.length} MSME sample PDF documents parsed, extracted, and normalized through Amazon S3 & DynamoDB pipeline!`,
-            featuresActivated: [
-              'Cash Runway & Spendable Liquidity Ribbon',
-              'Statutory Tax Lockbox (GST + TDS + EPFO)',
-              '60-Day Cash Flow Trajectory with Itemized Day Events',
-              'Risk Calendar Heatmap & Paginated Schedule Table',
-              'What-If Cash Simulator with Conflict Detection',
-              'Statutory Rails (GSTR-3B & Challan 281 Countdowns)',
-              'Obligations View (Fixed Overhead vs Trade Suppliers & Debtor Realities)',
-              'Working Capital Cycle (DSO, DIO, DPO, CCC)',
-              'Entity Relationship Graph (@xyflow/react)',
-            ],
-            details: results,
-          });
-        }
+function isAllowed(value: FormDataEntryValue | null, allowed: Set<string>): value is string {
+  return typeof value === 'string' && allowed.has(value);
+}
 
-        // Single specific sample document from registry
-        const matched = SAMPLE_DOCUMENTS_REGISTRY.find(
-          (d) => d.id === sampleType || d.fileName === sampleType
-        );
+function canonicalCategory(value: string): string {
+  return value === 'PURCHASES' ? 'PURCHASES_SUPPLIERS' : value;
+}
 
-        if (!matched) {
-          return NextResponse.json(
-            { error: `Unknown sample document type: "${sampleType}"` },
-            { status: 400 }
-          );
-        }
+/**
+ * Uploads are intentionally only an authenticated enqueue operation. S3 events
+ * invoke the extractor/normalizer state machine; this route never invokes a
+ * Lambda synchronously and never trusts a tenant id supplied by the browser.
+ */
+export async function POST(request: Request) {
+  let objectKey: string | undefined;
+  try {
+    const principal = await requirePrincipal(request);
+    const tenantId = principal;
 
-        const samplePdfPath = path.join(sampleDir, matched.fileName);
-        if (!fs.existsSync(samplePdfPath)) {
-          await matched.generator({ businessName, outputPath: samplePdfPath });
-        }
-
-        const fileBuffer = fs.readFileSync(samplePdfPath);
-        const result = await ingestPdfBuffer(fileBuffer, matched.fileName, matched.docType);
-        invalidateDashboardCache();
-
-        return NextResponse.json({
-          success: true,
-          sampleType: matched.id,
-          documentId: result.documentId,
-          fileName: result.fileName,
-          message: `Sample PDF "${matched.displayName}" parsed & normalized through pipeline into DynamoDB.`,
-          pipelineSummary: result.pipelineResult?.summary || null,
-        });
-      }
-
-      if (body.rawBase64) {
-        const fileBuffer = Buffer.from(body.rawBase64, 'base64');
-        const fileName = body.fileName || `doc_${Date.now()}.pdf`;
-        const docType = body.documentType || 'BANK_STATEMENT';
-        const manualMetadata = body.metadata || {};
-
-        const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
-        invalidateDashboardCache();
-
-        return NextResponse.json({
-          success: true,
-          documentId: result.documentId,
-          fileName: result.fileName,
-          pipelineSummary: result.pipelineResult?.summary || null,
-        });
-      }
-
-      throw new Error('Unsupported JSON payload. Provide useSample: true or rawBase64.');
+    if (!bucketName || !documentTableName) return jsonError('Ingestion storage is not configured', 503);
+    if (!(request.headers.get('content-type') || '').toLowerCase().includes('multipart/form-data')) {
+      return jsonError('Upload a PDF as multipart/form-data', 415);
     }
 
-    // -------------------------------------------------------------------------
-    // B. Multipart/form-data (Manual File Upload from Computer)
-    // -------------------------------------------------------------------------
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData();
-      const file = formData.get('file') as File | null;
-      const docType = ((formData.get('documentType') as string) || 'BANK_STATEMENT') as 'BANK_STATEMENT' | 'INVOICE';
-      const customVendor = formData.get('counterpartyName') as string | null;
-      const customAmount = formData.get('amount') as string | null;
+    const formData = await request.formData();
+    const file = formData.get('file');
+    if (!(file instanceof File)) return jsonError('A file is required', 400);
+    if (file.type !== 'application/pdf') return jsonError('Only application/pdf files are accepted', 415);
+    if (file.size <= 0 || file.size > MAX_PDF_BYTES) return jsonError('PDF files must be between 1 byte and 10 MB', 413);
 
-      let manualMetadata: any = {};
-      if (customVendor || customAmount) {
-        manualMetadata = {
-          counterpartyName: customVendor,
-          amount: customAmount ? parseFloat(customAmount) : undefined,
-          invoiceNumber: formData.get('invoiceNumber'),
-          dueDate: formData.get('dueDate'),
-          gstin: formData.get('gstin'),
-        };
-      }
+    const purposeValue = formData.get('purpose');
+    const categoryValue = formData.get('category');
+    if (!isAllowed(purposeValue, ALLOWED_PURPOSES)) return jsonError('A valid document purpose is required', 400);
+    if (!isAllowed(categoryValue, ALLOWED_CATEGORIES)) return jsonError('A valid document category is required', 400);
 
-      if (!file) {
-        return NextResponse.json({ error: 'No file provided in form-data' }, { status: 400 });
-      }
-
-      const arrayBuffer = await file.arrayBuffer();
-      const fileBuffer = Buffer.from(arrayBuffer);
-      const fileName = file.name || `upload_${Date.now()}`;
-
-      const result = await ingestPdfBuffer(fileBuffer, fileName, docType, manualMetadata);
-      invalidateDashboardCache();
-
-      return NextResponse.json({
-        success: true,
-        documentId: result.documentId,
-        fileName: result.fileName,
-        s3Key: result.s3Key,
-        documentType: docType,
-        message:
-          docType === 'BANK_STATEMENT'
-            ? `Successfully uploaded to S3 and normalized bank statement into DynamoDB ledger.`
-            : `Successfully uploaded bill to S3 and persisted canonical obligation records.`,
-        pipelineSummary: result.pipelineResult?.summary || null,
-      });
+    if (purposeValue === 'PERIODIC_UPDATE') {
+      await requireCompletedOnboarding(tenantId);
     }
 
-    return NextResponse.json({ error: 'Unsupported Content-Type' }, { status: 400 });
-  } catch (err: any) {
-    console.error('Failed to ingest document:', err);
-    return NextResponse.json(
-      { error: 'Document ingestion failed', details: err?.message || String(err) },
-      { status: 500 }
-    );
+    const bytes = Buffer.from(await file.arrayBuffer());
+    if (bytes.length > MAX_PDF_BYTES || bytes.subarray(0, PDF_SIGNATURE.length).toString('ascii') !== PDF_SIGNATURE) {
+      return jsonError('The uploaded file is not a valid PDF', 415);
+    }
+
+    const purpose = purposeValue;
+    const category = canonicalCategory(categoryValue);
+    const documentId = randomUUID();
+    const fileName = cleanFileName(file.name);
+    objectKey = `tenants/${tenantId}/documents/${documentId}/${fileName}`;
+    const now = new Date().toISOString();
+    const documentRecord = {
+      id: documentId,
+      tenantId,
+      fileName,
+      s3Key: objectKey,
+      fileType: 'application/pdf',
+      purpose,
+      category,
+      status: 'PENDING',
+      validationStatus: 'PENDING',
+      validationIssues: [],
+      extractedEntityCount: 0,
+      createdAt: now,
+      updatedAt: now,
+      __typename: 'DocumentRecord',
+    };
+
+    await docClient.send(new PutCommand({
+      TableName: documentTableName,
+      Item: documentRecord,
+      ConditionExpression: 'attribute_not_exists(id)',
+    }));
+
+    try {
+      await s3Client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: objectKey,
+        Body: bytes,
+        ContentType: 'application/pdf',
+        Metadata: { documentId, purpose, category },
+        ServerSideEncryption: 'AES256',
+      }));
+    } catch (error) {
+      try {
+        await docClient.send(new DeleteCommand({ TableName: documentTableName, Key: { id: documentId } }));
+      } catch (cleanupError) {
+        console.error('Failed to clean up pending document after S3 upload failure', cleanupError);
+      }
+      throw error;
+    }
+
+    return NextResponse.json({ documentId, status: 'PENDING' }, { status: 202 });
+  } catch (error) {
+    console.error('Document upload failed', error);
+    if (error instanceof AuthenticationError) return jsonError(error.message, 401);
+    if (error instanceof AuthenticationConfigurationError) return jsonError(error.message, 503);
+    if (error && typeof error === 'object' && 'status' in error && typeof error.status === 'number') {
+      return jsonError(error instanceof Error ? error.message : 'Upload is not allowed', error.status);
+    }
+    return jsonError(error instanceof Error ? error.message : 'Document upload failed', 500);
   }
 }

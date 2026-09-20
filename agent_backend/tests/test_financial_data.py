@@ -148,14 +148,9 @@ def test_transactions_csv_is_deduplicated_and_ordered(
 def test_export_tool_stores_csv_artifact(
     service: FinancialDataService,
     tmp_path,
-    monkeypatch,
 ) -> None:
     artifacts = LocalArtifactStore(tmp_path)
-    monkeypatch.setattr(
-        "finfine_agent.tools.financial_data._service",
-        lambda: service,
-    )
-    csv_tool = create_transactions_csv_tool(artifacts)
+    csv_tool = create_transactions_csv_tool(artifacts, service)
 
     result = csv_tool._tool_func(start_date="2026-10-01", end_date="2026-10-07")
     artifact, data = artifacts.read(result["artifactId"])

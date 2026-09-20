@@ -6,7 +6,6 @@ import csv
 import json
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from functools import lru_cache
 from io import StringIO
 from typing import Any, Protocol
 
@@ -334,59 +333,42 @@ class FinancialDataService:
         }
 
 
-@lru_cache(maxsize=1)
-def _service() -> FinancialDataService:
+def create_financial_data_tools(tenant_id: str, artifacts: LocalArtifactStore | None = None) -> list[Any]:
+    """Build financial tools bound to the authenticated request subject."""
+    if not tenant_id or not tenant_id.strip():
+        raise ValueError("tenant_id is required")
     settings = Settings.from_environment()
-    return FinancialDataService(DynamoFinancialStore(settings))
+    service = FinancialDataService(DynamoFinancialStore(settings, tenant_id=tenant_id))
+
+    @tool(name="get_latest_balance")
+    def scoped_latest_balance() -> dict[str, Any]:
+        return service.latest_balance()
+
+    @tool(name="get_transactions")
+    def scoped_transactions(
+        start_date: str | None = None,
+        end_date: str | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        return service.transactions(start_date, end_date, limit)
+
+    @tool(name="get_upcoming_obligations")
+    def scoped_upcoming_obligations(
+        days_ahead: int = 30,
+        obligation_type: str = "ALL",
+        as_of_date: str | None = None,
+    ) -> dict[str, Any]:
+        return service.upcoming_obligations(days_ahead, obligation_type, as_of_date)
+
+    return [
+        scoped_latest_balance,
+        scoped_transactions,
+        scoped_upcoming_obligations,
+        create_transactions_csv_tool(artifacts or LocalArtifactStore(), service=service),
+    ]
 
 
-@tool
-def get_latest_balance() -> dict[str, Any]:
-    """Return the latest available closing balance and its source date."""
-    return _service().latest_balance()
-
-
-@tool
-def get_transactions(
-    start_date: str | None = None,
-    end_date: str | None = None,
-    limit: int = 100,
-) -> dict[str, Any]:
-    """Read transactions and ready-to-use inflow/outflow totals for a date range.
-
-    The result already contains totalInflow and totalOutflow. Use those values
-    directly when the user asks for a transaction summary; Python is not needed
-    to recalculate or verify them.
-
-    Args:
-        start_date: Earliest transaction date to include.
-        end_date: Latest transaction date to include.
-        limit: Maximum number of transactions to return, from 1 to 200.
-    """
-    return _service().transactions(start_date, end_date, limit)
-
-
-@tool
-def get_upcoming_obligations(
-    days_ahead: int = 30,
-    obligation_type: str = "ALL",
-    as_of_date: str | None = None,
-) -> dict[str, Any]:
-    """Read upcoming payables and receivables.
-
-    Args:
-        days_ahead: Number of days to include, from 1 to 365.
-        obligation_type: ALL, PAYABLE, or RECEIVABLE.
-        as_of_date: Optional starting date in YYYY-MM-DD format; defaults to today.
-    """
-    return _service().upcoming_obligations(
-        days_ahead=days_ahead,
-        obligation_type=obligation_type,
-        as_of_date=as_of_date,
-    )
-
-
-def create_transactions_csv_tool(artifacts: LocalArtifactStore) -> Any:
+def create_transactions_csv_tool(artifacts: LocalArtifactStore, service: FinancialDataService) -> Any:
     """Create the transaction CSV export tool for one agent process."""
 
     @tool(name="export_transactions_csv")
@@ -408,7 +390,7 @@ def create_transactions_csv_tool(artifacts: LocalArtifactStore) -> Any:
             end_date: Latest transaction date in YYYY-MM-DD format.
             limit: Maximum rows to export, from 1 to 2000.
         """
-        columns, rows = _service().transactions_csv(start_date, end_date, limit)
+        columns, rows = service.transactions_csv(start_date, end_date, limit)
         output = StringIO(newline="")
         writer = csv.DictWriter(output, fieldnames=columns)
         writer.writeheader()

@@ -6,8 +6,8 @@ The Strands agent and HTTP API run on a developer computer. They read the
 existing DynamoDB tables without changing them. Financial Python calculations
 run in the private `finfine-code-executor` AWS Lambda function.
 
-This is a **single-tenant deployment**. `FINFINE_TENANT_ID` selects the
-business data server-side; a caller cannot choose or override it. Cognito's
+Every request is tenant-scoped from the verified Cognito access-token subject.
+The runtime selects the business data server-side; a caller cannot choose or override it. Cognito's
 `sub` claim owns chat sessions within that tenant.
 
 The backend exposes:
@@ -83,7 +83,6 @@ Important settings:
 
 ```text
 AWS_REGION=ap-south-1
-FINFINE_TENANT_ID=msme-001
 COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/replace-with-user-pool-id
 COGNITO_CLIENT_ID=replace-with-user-pool-client-id
 AGENT_SESSION_BUCKET_NAME=replace-with-amplify-storage-bucket

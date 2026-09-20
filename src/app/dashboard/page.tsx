@@ -7,21 +7,20 @@ import RiskCalendar from '@/components/dashboard/RiskCalendar';
 import ScenarioSimulator from '@/components/dashboard/ScenarioSimulator';
 import TaxChecksWidget from '@/components/dashboard/TaxChecksWidget';
 import type { FinancialMetricData } from '@/lib/financial-store';
+import { authenticatedFetch } from '@/lib/authenticated-fetch';
 
 export default function DashboardPage() {
   const [data, setData] = useState<FinancialMetricData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   
   // What-If Simulation State
   const [unplannedExpense, setUnplannedExpense] = useState<number>(0);
   const [delayDays, setDelayDays] = useState<number>(0);
 
   const loadData = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
     try {
       const url = isRefresh ? '/api/dashboard/financial-data?refresh=true' : '/api/dashboard/financial-data';
-      const res = await fetch(url);
+      const res = await authenticatedFetch(url);
       if (!res.ok) throw new Error('Failed to load financial records');
       const json = await res.json();
       setData(json);
@@ -29,12 +28,12 @@ export default function DashboardPage() {
       console.error('Failed to load dashboard data:', err);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    loadData();
+    const timer = window.setTimeout(() => { void loadData(); }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleResetSimulation = () => {

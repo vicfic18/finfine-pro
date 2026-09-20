@@ -20,13 +20,16 @@ interface ForecastingChartsProps {
   simulatedDelay?: number;
 }
 
+type TrajectoryPoint = FinancialMetricData['trajectory60Days'][number];
+type ChartClickState = { activePayload?: Array<{ payload?: TrajectoryPoint }> };
+
 export default function ForecastingCharts({
   data,
   simulatedExpense = 0,
   simulatedDelay = 0,
 }: ForecastingChartsProps) {
   const trajectory = Array.isArray(data?.trajectory60Days) ? data.trajectory60Days : [];
-  const [selectedDay, setSelectedDay] = useState<any | null>(
+  const [selectedDay, setSelectedDay] = useState<TrajectoryPoint | null>(
     trajectory[3] || trajectory[0] || null
   );
 
@@ -97,9 +100,10 @@ export default function ForecastingCharts({
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={chartData}
-              onClick={(e: any) => {
-                if (e && e.activePayload && e.activePayload.length > 0) {
-                  setSelectedDay(e.activePayload[0].payload);
+              onClick={(nextState) => {
+                const event = nextState as unknown as ChartClickState;
+                if (event.activePayload && event.activePayload.length > 0 && event.activePayload[0].payload) {
+                  setSelectedDay(event.activePayload[0].payload);
                 }
               }}
               margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
@@ -124,7 +128,7 @@ export default function ForecastingCharts({
               <Tooltip
                 content={({ active, payload }) => {
                   if (active && payload && payload.length) {
-                    const d = payload[0].payload;
+                    const d = payload[0].payload as TrajectoryPoint;
                     return (
                       <div className="bg-neutral-900 text-white p-3 border border-neutral-700 text-xs font-sans max-w-xs">
                         <div className="flex items-center justify-between font-bold pb-1.5 border-b border-neutral-800">

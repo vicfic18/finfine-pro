@@ -3,12 +3,16 @@ import { afterEach, test } from 'node:test';
 
 import { GET as GET_HISTORY, POST } from '../src/app/api/chat/route';
 import { DELETE as DELETE_CONVERSATION, GET as GET_CONVERSATION } from '../src/app/api/chat/[sessionId]/route';
+import { setOnboardingGateOverrideForTests } from '../src/lib/onboarding-store';
 
 const REQUEST_ID = '315b4a4e-d5f8-4b21-911c-37bb629e869d';
 const SESSION_ID = '557dbe23-8e61-41f4-8e42-3925b0eb945e';
 const originalFetch = globalThis.fetch;
 const originalRuntimeUrl = process.env.FINFINE_AGENT_RUNTIME_URL;
 const originalTimeout = process.env.FINFINE_CHAT_PROXY_TIMEOUT_MS;
+
+process.env.FINFINE_ENABLE_TEST_OVERRIDES = '1';
+setOnboardingGateOverrideForTests(async () => 'test-merchant-sub');
 
 function chatRequest(
   body: unknown,

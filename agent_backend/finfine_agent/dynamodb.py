@@ -14,7 +14,7 @@ from finfine_agent.config import Settings
 class DynamoFinancialStore:
     """Read financial records for one configured tenant."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, tenant_id: str) -> None:
         session = boto3.Session(
             profile_name=settings.aws_profile,
             region_name=settings.aws_region,
@@ -29,6 +29,9 @@ class DynamoFinancialStore:
         )
         self._client = self._resource.meta.client
         self._settings = settings
+        self._tenant_id = tenant_id.strip()
+        if not self._tenant_id:
+            raise ValueError("A request-scoped tenant is required")
         self._table_cache: dict[str, str | None] = {}
 
     def _resolve_table(self, configured_name: str | None, prefix: str) -> str | None:
@@ -50,7 +53,7 @@ class DynamoFinancialStore:
 
     def list_documents(self) -> list[dict[str, Any]]:
         condition = (
-            Attr("tenantId").eq(self._settings.tenant_id)
+            Attr("tenantId").eq(self._tenant_id)
             & Attr("status").eq("EXTRACTED")
         )
         return self._scan(self._settings.document_table_name, condition)
@@ -60,7 +63,7 @@ class DynamoFinancialStore:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> list[dict[str, Any]]:
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if start_date and end_date:
             condition &= Attr("date").between(start_date, end_date)
         elif start_date:
@@ -75,7 +78,7 @@ class DynamoFinancialStore:
         end_date: str,
     ) -> list[dict[str, Any]]:
         condition = (
-            Attr("tenantId").eq(self._settings.tenant_id)
+            Attr("tenantId").eq(self._tenant_id)
             & Attr("dueDate").between(start_date, end_date)
         )
         return self._scan(self._settings.obligation_table_name, condition)
@@ -86,7 +89,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.merchant_settings_table_name, "MerchantFinancialSettings")
         if not table_name:
             return None
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         items = self._scan(table_name, condition)
         return items[0] if items else None
 
@@ -94,7 +97,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.cash_position_table_name, "CashPositionSnapshot")
         if not table_name:
             return None
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         items = self._scan(table_name, condition)
         if not items:
             return None
@@ -104,7 +107,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.product_table_name, "Product")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if is_active_only:
             condition &= Attr("isActive").eq(True)
         return self._scan(table_name, condition)
@@ -117,7 +120,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.sale_table_name, "Sale")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if start_date and end_date:
             condition &= Attr("saleDate").between(start_date, end_date)
         elif start_date:
@@ -134,7 +137,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.sale_line_item_table_name, "SaleLineItem")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if sale_id:
             condition &= Attr("saleId").eq(sale_id)
         if product_id:
@@ -145,7 +148,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.inventory_snapshot_table_name, "InventorySnapshot")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         return self._scan(table_name, condition)
 
     def list_inventory_items(
@@ -156,7 +159,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.inventory_item_table_name, "InventoryItem")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if snapshot_id:
             condition &= Attr("inventorySnapshotId").eq(snapshot_id)
         if product_id:
@@ -171,7 +174,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_table_name, "Purchase")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if start_date and end_date:
             condition &= Attr("purchaseDate").between(start_date, end_date)
         elif start_date:
@@ -188,7 +191,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_line_item_table_name, "PurchaseLineItem")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if purchase_id:
             condition &= Attr("purchaseId").eq(purchase_id)
         if product_id:
@@ -199,7 +202,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.supplier_profile_table_name, "SupplierProfile")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         return self._scan(table_name, condition)
 
     def list_supplier_product_terms(
@@ -210,7 +213,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.supplier_product_terms_table_name, "SupplierProductTerms")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if supplier_id:
             condition &= Attr("supplierId").eq(supplier_id)
         if product_id:
@@ -221,7 +224,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_order_table_name, "PurchaseOrder")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if status:
             condition &= Attr("status").eq(status)
         return self._scan(table_name, condition)
@@ -233,7 +236,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.purchase_order_line_item_table_name, "PurchaseOrderLineItem")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if purchase_order_id:
             condition &= Attr("purchaseOrderId").eq(purchase_order_id)
         return self._scan(table_name, condition)
@@ -242,7 +245,7 @@ class DynamoFinancialStore:
         table_name = self._resolve_table(self._settings.recurring_expense_table_name, "RecurringExpense")
         if not table_name:
             return []
-        condition = Attr("tenantId").eq(self._settings.tenant_id)
+        condition = Attr("tenantId").eq(self._tenant_id)
         if is_active:
             condition &= Attr("isActive").eq(True)
         return self._scan(table_name, condition)

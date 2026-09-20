@@ -6,6 +6,8 @@ import {
   type ChatErrorResponse,
 } from '@/lib/chat-contract';
 import { bearerToken, readJson, runtimeFetch, upstreamErrorStatus } from '@/lib/chat-runtime';
+import { AuthenticationConfigurationError, AuthenticationError } from '@/lib/server-auth';
+import { OnboardingRequiredError, requireCompletedOnboarding } from '@/lib/onboarding-store';
 
 function errorResponse(status: number, code: string, message: string): Response {
   const body: ChatErrorResponse = { status: 'error', requestId: null, code, message };
@@ -19,6 +21,14 @@ async function proxyConversation(
 ): Promise<Response> {
   if (!isUuid(sessionId)) return errorResponse(400, 'invalid_session_id', 'sessionId must be a valid UUID.');
   if (!bearerToken(request)) return errorResponse(401, 'unauthorized', 'A Bearer access token is required.');
+  try {
+    await requireCompletedOnboarding(request);
+  } catch (error) {
+    if (error instanceof AuthenticationConfigurationError) return errorResponse(503, 'auth_unavailable', error.message);
+    if (error instanceof AuthenticationError) return errorResponse(401, 'unauthorized', error.message);
+    if (error instanceof OnboardingRequiredError) return errorResponse(403, error.code, error.message);
+    return errorResponse(503, 'onboarding_unavailable', 'Onboarding status is unavailable.');
+  }
 
   const result = await runtimeFetch(request, `conversations/${encodeURIComponent(sessionId)}`, method);
   if (!result.response) {
