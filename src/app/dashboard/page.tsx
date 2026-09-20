@@ -97,63 +97,9 @@ export default function DashboardPage() {
             <h1 className="font-display font-bold text-3xl sm:text-4xl text-neutral-900 tracking-tight leading-none">
               {data.businessName || 'My Business'}
             </h1>
-            <p className="text-xs text-neutral-500 mt-1.5 flex items-center space-x-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-              <span>Deterministic cash flow & liquidity trajectory</span>
-            </p>
+
           </div>
         </header>
-      </div>
-
-      {/* 2. Quick Actions Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link
-          href="/dashboard/ingestion"
-          className="p-3.5 bg-white border border-neutral-200 hover:border-neutral-900 hover:shadow-xs transition-all group flex items-center justify-between"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white flex items-center justify-center text-neutral-700 transition-colors">
-              <UploadCloud size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-900">{t('dashboard.actionUpload', 'Upload Invoices & Statements')}</p>
-              <p className="text-[11px] text-neutral-500">Sync fresh financial data</p>
-            </div>
-          </div>
-          <ArrowRight size={14} className="text-neutral-400 group-hover:text-neutral-900 group-hover:translate-x-0.5 transition-all" />
-        </Link>
-
-        <Link
-          href="/dashboard/obligations"
-          className="p-3.5 bg-white border border-neutral-200 hover:border-neutral-900 hover:shadow-xs transition-all group flex items-center justify-between"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded bg-neutral-100 group-hover:bg-neutral-900 group-hover:text-white flex items-center justify-center text-neutral-700 transition-colors">
-              <CalendarClock size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-900">{t('dashboard.actionObligation', 'Schedule Payment / EMI')}</p>
-              <p className="text-[11px] text-neutral-500">Manage upcoming outflows</p>
-            </div>
-          </div>
-          <ArrowRight size={14} className="text-neutral-400 group-hover:text-neutral-900 group-hover:translate-x-0.5 transition-all" />
-        </Link>
-
-        <Link
-          href="/dashboard/chat"
-          className="p-3.5 bg-neutral-900 text-white hover:bg-neutral-800 transition-all group flex items-center justify-between"
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded bg-neutral-800 flex items-center justify-center text-amber-400">
-              <Sparkles size={16} />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white">{t('dashboard.actionAI', 'Ask Financial AI')}</p>
-              <p className="text-[11px] text-neutral-400">Runway & tax advisory</p>
-            </div>
-          </div>
-          <ArrowRight size={14} className="text-neutral-400 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-        </Link>
       </div>
 
       {/* 3. Primary KPI Bar */}

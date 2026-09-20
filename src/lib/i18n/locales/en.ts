@@ -112,7 +112,7 @@ export const en = {
   },
   charts: {
     projectionHorizon: 'Projection • 60-Day Horizon',
-    cashFlowTrajectory: 'Cash Flow Trajectory',
+    cashFlowTrajectory: 'Cash flow in current state',
     expectedBalance: 'Expected Balance',
     confidenceBand: 'Confidence Band',
     zeroCashDangerLine: 'Zero-Cash Danger Line',

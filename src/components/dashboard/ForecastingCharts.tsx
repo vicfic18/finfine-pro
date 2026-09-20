@@ -96,18 +96,8 @@ export default function ForecastingCharts({
       {/* 1. Header Cell: AI Forecast & Anchor Date */}
       <div className="p-4 sm:p-6 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2 mb-1">
-            <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider block">
-              {t('charts.projectionHorizon', 'Historical Actuals (Left) • AI Predictions (Right)')}
-            </span>
-            <span className="text-neutral-300">•</span>
-            <span className="inline-flex items-center text-[10.5px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
-              AI Forecast • Live
-            </span>
-          </div>
           <h2 className="font-display font-bold text-2xl sm:text-3xl text-neutral-900 tracking-tight">
-            {t('charts.cashFlowTrajectory', 'Cash Flow Trajectory')}
+            {t('charts.cashFlowTrajectory', 'Cash Flow as of now')}
           </h2>
         </div>
 
