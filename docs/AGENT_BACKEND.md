@@ -1,266 +1,33 @@
-# FinFine Pro Agent Backend
+# FinFine Pro agent backend
 
-## Current Scope
+The agent backend is a FastAPI service built around Strands. It supports local
+development and is also packaged as the Docker image Lambda defined in
+`amplify/backend.ts`. The service is authenticated, tenant-scoped, and
+read-only with respect to financial records. Ad hoc user-requested Python
+calculations are delegated to the separately provisioned
+`finfine-code-executor` Lambda.
 
-The Strands agent and HTTP API run on a developer computer. They read the
-existing DynamoDB tables without changing them. Financial Python calculations
-run in the private `finfine-code-executor` AWS Lambda function.
+## Runtime contract
 
-Every request is tenant-scoped from the verified Cognito access-token subject.
-The runtime selects the business data server-side; a caller cannot choose or override it. Cognito's
-`sub` claim owns chat sessions within that tenant.
+The API is implemented in `agent_backend/finfine_agent/api.py`:
 
-The backend exposes:
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/ping` | Health response `{ "status": "Healthy" }`. |
+| POST | `/invocations` | Buffered request/response chat. |
+| POST | `/invocations/stream` | NDJSON streaming chat projection. |
+| GET | `/invocations/conversations` | List the authenticated user's conversations. |
+| GET | `/invocations/conversations/{sessionId}` | Read the visible transcript for one conversation. |
+| DELETE | `/invocations/conversations/{sessionId}` | Delete the authenticated user's conversation and session objects. |
 
-- `GET /ping`
-- `POST /invocations` with the stable chat contract documented below
-- `GET /invocations/conversations` for the signed-in user's recent chats
-- `GET /invocations/conversations/{sessionId}` for a safe visible transcript
-- `DELETE /invocations/conversations/{sessionId}` to remove a chat and its session data
+OpenAPI endpoints are disabled in the current app. The Next.js `/api/chat`
+routes are the browser-facing contract and forward the Cognito Bearer token to
+this service.
 
-The browser calls the same-origin Next.js `/api/chat` route. That route
-validates the request, forwards the Cognito access token, applies a timeout,
-and sanitizes upstream failures. Only the server-side runtime URL changes when
-the FastAPI service is later moved behind Lambda/API Gateway.
+### Request and response
 
-## Voice Chat
-
-Voice chat is authenticated tap-to-talk. The browser uploads a short WAV
-recording for Amazon Transcribe, then submits the editable transcript through
-the existing Strands agent. Amazon Polly speaks the completed, owner-scoped
-assistant answer. The agent remains on the configured OpenRouter-compatible
-provider; voice chat does not invoke Amazon Bedrock.
-
-The speech selector is independent of the app's display language. English uses
-`en-IN`, Hindi uses `hi-IN`, and Hinglish asks Transcribe to identify between
-`en-IN` and `hi-IN`. Replies follow the selected mode; Hindi text is written in
-Devanagari. Audio is processed ephemerally and is not added to chat history.
-The agent invokes a private Node.js Lambda for Transcribe's streaming SDK; the
-helper has no public URL and can only start Transcribe streams.
-
-`POLLY_VOICE_ID` is customizable. The default `Kajal` voice is bilingual for
-Indian English and Hindi. A replacement voice must support both `en-IN` and
-`hi-IN` with the selected `POLLY_ENGINE`; the backend checks this with Polly
-when voice settings load (on the first voice API call per runtime container)
-and returns a clear configuration error if it does not. The default speech
-region is `ap-south-1`.
-
-## Agent Tools
-
-### `load_analysis_skill`
-
-Optionally loads one analysis guide from the repository for detailed work. The
-terminal trace shows which guide was loaded. Simple balance, transaction, and
-obligation lookups do not need a guide. For forecasting, cash-flow planning,
-inventory, margin, supplier, or scenario work, the agent can load only the
-guide or guides that help with that question.
-
-### `get_latest_balance`
-
-Returns the newest closing balance, source date, and source document.
-
-### `get_transactions`
-
-Returns up to 200 transactions for an optional date range. Repeated imports
-with the same payment reference are counted once.
-
-### `get_upcoming_obligations`
-
-Returns scheduled payables and receivables for a chosen number of days.
-
-### `get_business_data`
-
-Reads one of the 17 canonical, read-only, tenant-scoped datasets through one
-validated tool. The dataset enum is authoritative; callers cannot pass a
-physical DynamoDB table name. The datasets are:
-
-`documents`, `transactions`, `obligations`, `merchant_settings`,
-`cash_positions`, `products`, `sales`, `sale_line_items`,
-`inventory_snapshots`, `inventory_items`, `purchases`, `purchase_line_items`,
-`suppliers`, `supplier_product_terms`, `purchase_orders`,
-`purchase_order_line_items`, and `recurring_expenses`.
-
-Supported filters are date ranges for documents, transactions, obligations,
-cash positions, sales, inventory snapshots, purchases, and purchase orders;
-status for documents, obligations, and purchase orders; product and parent IDs
-for line-item datasets; supplier IDs for purchases, supplier terms, and orders;
-and `active_only` for products and recurring expenses. Results always use the
-same `{dataset, count, availableCount, truncated, records, warning}` envelope.
-An unconfigured dataset is reported in `warning` and is not treated as an
-empty dataset. Line items connect to their parent sale, inventory snapshot,
-purchase, or order; line items and supplier terms connect to products; and
-transactions may reference products, suppliers, sales, purchases, or
-obligations.
-
-### `export_transactions_csv`
-
-Exports up to 2,000 deduplicated transactions to a short-lived local CSV
-artifact. The model receives only its artifact ID, filename, row count, and
-column names. Transaction rows are not copied into the model conversation.
-
-### `export_business_data_csv`
-
-Exports one filtered canonical dataset to a short-lived CSV artifact. It uses
-the same validation, tenant-scoped reader, filters, and row limit as
-`get_business_data`; the returned `artifactId` and filename can be passed to
-`run_financial_python` for calculations. One dataset is exported per call.
-
-### `run_financial_python`
-
-Runs validated Python in the private Lambda executor. Pass an `artifact_id`
-returned by either CSV export tool to make that short-lived file available to
-Python under the returned filename.
-
-The executor includes NumPy, pandas, SciPy, and scikit-learn.
-
-The optional canonical table variables are `MERCHANT_SETTINGS_TABLE_NAME`,
-`CASH_POSITION_TABLE_NAME`, `PRODUCT_TABLE_NAME`, `SALE_TABLE_NAME`,
-`SALE_LINE_ITEM_TABLE_NAME`, `INVENTORY_SNAPSHOT_TABLE_NAME`,
-`INVENTORY_ITEM_TABLE_NAME`, `PURCHASE_TABLE_NAME`,
-`PURCHASE_LINE_ITEM_TABLE_NAME`, `SUPPLIER_PROFILE_TABLE_NAME`,
-`SUPPLIER_PRODUCT_TERMS_TABLE_NAME`, `PURCHASE_ORDER_TABLE_NAME`,
-`PURCHASE_ORDER_LINE_ITEM_TABLE_NAME`, and `RECURRING_EXPENSE_TABLE_NAME`.
-If one is not configured, the corresponding tool result says so explicitly.
-
-Users do not need to mention Python or choose tools. Direct lookups use the data
-tools. Questions requiring new arithmetic, grouping, comparisons, trends,
-projections, statistics, optimization, or predictions automatically use the CSV
-export and Lambda Python tools. If execution fails, the agent reports the
-failure instead of substituting figures from an earlier turn.
-
-## Local Setup
-
-The project supports Python 3.11 through 3.13.
-
-```bash
-cd agent_backend
-uv sync
-cp env.example .env
-```
-
-Edit `.env` and add your personal OpenRouter API key. Never commit this file or
-share the key. Each teammate must create their own OpenRouter key.
-
-Important settings:
-
-```text
-AWS_REGION=ap-south-1
-COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/replace-with-user-pool-id
-COGNITO_CLIENT_ID=replace-with-user-pool-client-id
-AGENT_SESSION_BUCKET_NAME=replace-with-amplify-storage-bucket
-AGENT_SESSION_REGION=replace-with-amplify-storage-region
-AGENT_SESSION_PREFIX=agent-sessions/
-AGENT_VERSION=v1
-AGENT_SESSION_RETENTION_DAYS=30
-AGENT_REQUEST_TIMEOUT_SECONDS=90
-VOICE_AWS_REGION=ap-south-1
-POLLY_VOICE_ID=Kajal
-POLLY_ENGINE=neural
-POLLY_OUTPUT_FORMAT=mp3
-VOICE_MAX_DURATION_SECONDS=30
-VOICE_MAX_AUDIO_BYTES=1048576
-CODE_EXECUTOR_REGION=ap-south-1
-CODE_EXECUTOR_FUNCTION_NAME=finfine-code-executor
-OPENROUTER_API_KEY=replace-with-your-own-openrouter-key
-MODEL_BASE_URL=https://openrouter.ai/api/v1
-MODEL_ID=nex-agi/nex-n2.5-pro:free
-```
-
-The signed-in AWS identity running FastAPI must be able to read the configured
-DynamoDB tables, invoke `finfine-code-executor`, and read/write the
-`agent-sessions/` prefix in the existing Amplify storage bucket. Conversation
-deletion also requires `s3:DeleteObject`, and snapshot cleanup requires
-`s3:ListBucket` constrained to that prefix. That prefix is
-not present in `amplify/storage/resource.ts`, so Amplify does not grant browser
-identities access to it. The bucket encrypts objects at rest, and the backend
-adds a prefix-scoped lifecycle rule whose default retention is 30 days.
-
-For local voice testing, also set `VOICE_TRANSCRIBER_FUNCTION_NAME` from the
-`custom.voiceTranscriberFunctionName` output and grant the local AWS identity
-`lambda:InvokeFunction`, `polly:DescribeVoices`, and `polly:SynthesizeSpeech`.
-Amplify configures these values and permissions for the deployed agent runtime.
-
-To test the complete portal locally without deploying the voice Lambda, set:
-
-```text
-VOICE_TRANSCRIBER_MODE=local
-VOICE_AWS_REGION=ap-south-1
-POLLY_VOICE_ID=Kajal
-POLLY_ENGINE=neural
-```
-
-Leave `VOICE_TRANSCRIBER_FUNCTION_NAME` empty in this mode. Start the FastAPI
-runtime from `agent_backend` with `uv run python -m finfine_agent.api`, set the
-Next.js `FINFINE_AGENT_RUNTIME_URL=http://127.0.0.1:8080`, and run `npm run dev`.
-The local Node helper uses the normal AWS credential chain to call Transcribe
-Streaming directly; FastAPI calls Polly directly. The signed-in AWS identity
-therefore needs `transcribe:StartStreamTranscription`, `polly:DescribeVoices`,
-and `polly:SynthesizeSpeech`. No Lambda or Bedrock call is used in local mode.
-
-After `npx ampx sandbox`, take the Cognito pool/client, storage bucket, and
-region values from `amplify_outputs.json`. Custom outputs also include the
-agent session bucket, prefix, and retention values.
-
-The backend uses OpenRouter's OpenAI-compatible API. Nex N2.5 Pro is the current
-test model because it supports tool calling, but it is not a hard requirement.
-You can replace `MODEL_ID` with another capable OpenRouter model. For this agent,
-choose one that supports `tools` and `tool_choice`, follows multi-step tool calls
-reliably, and returns ordinary final-answer text. Pin a specific model instead of
-using a random router so one workflow does not change models between steps.
-
-The backend disables and excludes provider-specific reasoning metadata because
-Strands cannot replay that metadata during a later Chat Completions tool-call
-turn. Free model availability, limits, and behavior can change. Providers may
-log prompts or use them to improve their models. Use test data unless your team
-has reviewed and accepted the provider's data policy.
-
-```bash
-aws login
-aws sts get-caller-identity
-```
-
-## Run the Agent
-
-Start a traced conversation:
-
-```bash
-uv run python -m finfine_agent.agent
-```
-
-Ask one question and exit:
-
-```bash
-uv run python -m finfine_agent.agent \
-  "Export the transactions to CSV and calculate net cash flow with pandas."
-```
-
-The terminal shows model output, tool inputs, tool results, timing, and errors.
-Secrets are redacted. Hidden chain-of-thought is not displayed.
-
-## Run the API for Frontend Development
-
-```bash
-uv run uvicorn finfine_agent.api:app --reload --host 127.0.0.1 --port 8080
-```
-
-```bash
-curl http://127.0.0.1:8080/ping
-```
-
-```bash
-curl -X POST http://127.0.0.1:8080/invocations \
-  -H 'Authorization: Bearer <cognito-access-token>' \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"What is my latest available balance? Show the source date.","requestId":"315b4a4e-d5f8-4b21-911c-37bb629e869d"}'
-```
-
-The token must be a Cognito access token. The API validates its issuer,
-signature, expiry, `token_use=access`, client ID, and `sub`.
-
-### Invocation contract
-
-`sessionId` is omitted on the first turn. FastAPI returns the server-generated
-ID, and subsequent turns send it back.
+The first request omits `sessionId`; subsequent requests reuse the UUID returned
+by the service. `requestId` is required for idempotent retries.
 
 ```json
 {
@@ -279,118 +46,245 @@ ID, and subsequent turns send it back.
 }
 ```
 
-Errors always use `{status, requestId, code, message}` and do not expose tool
-arguments, tool outputs, model events, financial records, traces, or generated
-reasoning summaries. A supplied session that is missing, expired, belongs to a
-different user, or was created by an incompatible agent version returns the
-same `SESSION_UNAVAILABLE` error. The UI keeps the visible transcript and asks
-the user to start a new chat; it never silently replays the failed request.
+Public errors use `{status, requestId, code, message}`. The API deliberately
+does not return tool arguments, raw tool results, model traces, or hidden
+reasoning in an error response. Important error codes include
+`AUTHENTICATION_REQUIRED`, `INVALID_REQUEST`, `SESSION_UNAVAILABLE`,
+`CONVERSATION_NOT_FOUND`, `REQUEST_ID_CONFLICT`, `REQUEST_TIMEOUT`, and
+`AGENT_DEPENDENCY_UNAVAILABLE`.
 
-Completed requests are stored by `requestId` so a safe retry returns the same
-answer. Reusing a request ID for different input is rejected.
+The FastAPI dependency validates a Cognito access token with its issuer, JWKS
+signature, expiry, `token_use=access`, configured client ID, and non-empty
+subject. The subject becomes the tenant ID passed to every financial tool. A
+caller cannot select a different tenant or DynamoDB table through the request
+body.
 
-### Durable sessions
+## Registered agent tools
 
-Each invocation creates a fresh Strands `Agent` and awaits `invoke_async()`.
-`SnapshotSessionManager` restores and saves the conversation through Strands'
-built-in `S3Storage`. Public session IDs remain UUIDs; S3 keys use an opaque
-hash of the authenticated owner, session ID, and agent version. In-process
-locks serialize turns for one session. S3 remains the durable source of truth
-across process restarts; there is no additional cache or DynamoDB session
-table.
+`create_agent()` in `agent_backend/finfine_agent/agent.py` registers the
+following tools:
 
-The same private prefix contains an application-owned conversation catalog and
-visible transcript JSON. Catalog keys are scoped by a SHA-256 digest of the
-Cognito `sub`. Transcripts contain only completed user prompts and final
-assistant answers; tool calls, tool results, and internal snapshot state are
-never returned by the history API. The first prompt becomes the title without
-another model call. These objects share the 30-day lifecycle used by the
-Strands snapshots.
+### `load_analysis_skill`
 
-Catalog writes use an in-process owner lock, matching the current single
-runtime deployment. Move the catalog to a concurrency-safe index such as
-DynamoDB before enabling multiple writable runtime replicas.
+Loads one repository guide from `skills/`. The loader only permits a known skill
+name and returns its Markdown instructions. Relevant guides include cash-flow,
+financial explanation, validation, scenario analysis, inventory, margin,
+sales, supplier, merchant intake, and orchestration topics.
 
-## Lambda Executor
+### `get_latest_balance`
 
-The current AWS resources are in `ap-south-1`:
+Returns the latest available liquid balance and source date. The reader prefers
+`CashPositionSnapshot`, then document closing-balance metadata, then a
+transaction balance.
 
-- Function: `finfine-code-executor`
-- Layer: `finfine-python-analysis`
-- Build bucket: `finfine-lambda-artifacts-uthay-359851121709-ap-south-1-an`
-- Role: `FinFineLambdaCodeExecutorRole`
+### `get_transactions`
 
-The function has 2 GiB memory and a 35-second Lambda timeout. Generated Python
-has a 20-second execution timeout. It runs in two private subnets without an
-internet route.
+Returns at most 200 deduplicated transactions for an optional inclusive date
+range, with inflow/outflow totals. Duplicates with the same reference and type
+are counted once when possible.
 
-After network setup, its role retains only CloudWatch logging permission. It
-has no DynamoDB, S3, OpenRouter, Bedrock, AgentCore, or Secrets Manager access.
+### `get_upcoming_obligations`
 
-The S3 bucket is used only while publishing the scientific dependency layer.
-Transaction CSV files are sent directly in the authenticated Lambda invocation
-and are not stored in S3.
+Returns active scheduled or overdue payables and receivables for a 1–365 day
+window. The result includes totals, due dates, type, category, statutory flag,
+and warning text when no records are available.
 
-The function has no public URL. The local backend invokes it with the AWS SDK.
-The frontend calls the FinFine backend, never Lambda directly.
+### `get_business_data`
 
-## Execution Limits
+Reads one closed-set, tenant-scoped dataset. The dataset name—not a physical
+table name—is supplied by the model. The supported values are:
 
-The executor accepts:
+`documents`, `transactions`, `obligations`, `merchant_settings`,
+`cash_positions`, `products`, `sales`, `sale_line_items`,
+`inventory_snapshots`, `inventory_items`, `purchases`, `purchase_line_items`,
+`suppliers`, `supplier_product_terms`, `purchase_orders`,
+`purchase_order_line_items`, and `recurring_expenses`.
 
-- Python code up to 20 KB.
-- At most one CSV input.
-- CSV input up to 4 MB.
-- Captured output up to 200 KB.
+The result envelope is:
 
-Runaway code and its child processes are killed. The child receives no AWS
-credential environment variables, and the VPC has no internet route.
+```json
+{
+  "dataset": "transactions",
+  "count": 2,
+  "availableCount": 2,
+  "truncated": false,
+  "records": [],
+  "warning": null
+}
+```
 
-Ordinary Lambda may reuse an execution environment. Every invocation therefore
-uses a new temporary directory that is deleted afterward. Lambda tenant
-isolation is not available to this account in `ap-south-1`, so this executor is
-currently intended for the local, single-tenant development flow.
+Supported filters are dataset-specific date ranges, statuses, parent IDs,
+product IDs, supplier IDs, and `active_only`. Missing optional tables are
+reported as a warning instead of being silently presented as a populated empty
+dataset. Reads use DynamoDB scans with a `tenantId` filter; no custom GSI is
+required by the current implementation.
 
-The code validator blocks direct system, network, credential, and AWS imports.
-It is an additional guard; the no-secret Lambda environment is the main safety
-boundary.
+### `export_transactions_csv` and `export_business_data_csv`
 
-## Tests
+These tools prepare bounded CSV artifacts for calculations without copying all
+business records into the model prompt. Transaction exports are limited to
+2,000 rows; canonical dataset exports are limited to 200 rows. Artifacts are
+kept in a process-local temporary directory and are referenced by an opaque
+`artifactId`.
+
+### `run_financial_python`
+
+Runs a short Python program in `finfine-code-executor`. It accepts code up to
+20 KB and at most one CSV artifact up to 4 MB. The validator rejects direct
+system, network, credential, and file-access primitives such as `boto3`,
+`requests`, `subprocess`, `open`, `eval`, and `exec`.
+
+The executor exposes the scientific packages built into its deployment layer,
+including NumPy, pandas, SciPy, and scikit-learn. The child process has a
+20-second wall-clock limit, bounded CPU/file/process resources, no AWS
+credential environment, and no internet route in the intended deployment.
+
+### `predict_cash_flow_sagemaker`
+
+Despite its historical name, the agent-side implementation currently performs
+the forecast in Python. It reads tenant-scoped records, applies optional stress
+inputs (`simulate_extra_expense_inr`, `simulate_debtor_delay_days`, and
+`simulate_festive_drop_percent`), and returns P10/P50/P90 milestones. It does
+not call a SageMaker endpoint. The frontend/server forecast dispatcher has a
+separate optional SageMaker integration documented in
+`docs/ARCHITECTURE.md`.
+
+## Environment and local setup
+
+The project requires Python 3.11–3.13 and uses `uv`.
+
+```bash
+cd agent_backend
+uv sync
+cp env.example .env
+```
+
+Set a personal model key in `.env`; never commit that file. The minimum
+financial-reader configuration is:
+
+```text
+AWS_REGION=ap-south-1
+DOCUMENT_RECORD_TABLE_NAME=<DocumentRecord table>
+TRANSACTION_TABLE_NAME=<Transaction table>
+OBLIGATION_TABLE_NAME=<Obligation table>
+```
+
+The runtime additionally requires:
+
+```text
+COGNITO_ISSUER=https://cognito-idp.<region>.amazonaws.com/<pool-id>
+COGNITO_CLIENT_ID=<user-pool-client-id>
+AGENT_SESSION_BUCKET_NAME=<Amplify storage bucket>
+AGENT_SESSION_REGION=ap-south-1
+AGENT_SESSION_PREFIX=agent-sessions/
+AGENT_VERSION=v1
+AGENT_SESSION_RETENTION_DAYS=30
+AGENT_REQUEST_TIMEOUT_SECONDS=90
+```
+
+`COGNITO_USER_POOL_ID` can be used instead of `COGNITO_ISSUER`; the runtime
+derives the issuer from the pool ID. Model and executor settings are:
+
+```text
+OPENROUTER_API_KEY=<personal key>
+MODEL_BASE_URL=https://openrouter.ai/api/v1
+MODEL_ID=<tool-calling model>
+MODEL_MAX_TOKENS=2048
+MODEL_TEMPERATURE=0
+CODE_EXECUTOR_REGION=ap-south-1
+CODE_EXECUTOR_FUNCTION_NAME=finfine-code-executor
+```
+
+`AgentSettings` also supports a Gemini-compatible base URL. The model must
+support tool calls and ordinary final-answer text; the repository does not
+require one particular provider or model ID.
+
+After `npx ampx sandbox`, use the generated `amplify_outputs.json` to fill in
+the Cognito, bucket, region, and table values. The AWS identity running the
+service needs:
+
+- read access to the configured canonical DynamoDB tables;
+- read/write/list/delete access limited to the `agent-sessions/` prefix;
+- permission to invoke `finfine-code-executor`; and
+- network access to the model provider when a hosted model is configured.
+
+## Running the local agent and API
+
+The CLI requires an explicit tenant ID because it has no HTTP principal:
+
+```bash
+uv run python -m finfine_agent.agent --tenant-id <cognito-sub> --quiet \
+  "What is my latest available balance?"
+```
+
+Start the HTTP service:
+
+```bash
+uv run uvicorn finfine_agent.api:app --reload --host 127.0.0.1 --port 8080
+curl http://127.0.0.1:8080/ping
+```
+
+Invoke it with a real Cognito access token:
+
+```bash
+curl -X POST http://127.0.0.1:8080/invocations \
+  -H 'Authorization: Bearer <cognito-access-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"What is my latest available balance?","requestId":"315b4a4e-d5f8-4b21-911c-37bb629e869d"}'
+```
+
+The Next.js proxy uses `FINFINE_AGENT_RUNTIME_URL` when set. Otherwise it uses
+the custom `agentApiUrl` generated by `amplify/backend.ts`.
+
+## Durable sessions and idempotency
+
+Each invocation creates a fresh Strands agent and restores its
+`SnapshotSessionManager` from S3. Public session IDs are UUIDs; storage IDs are
+opaque SHA-256-derived values bound to the authenticated subject and
+`AGENT_VERSION`.
+
+The same prefix contains:
+
+- Strands snapshot objects;
+- an owner-digested conversation catalog;
+- visible transcript JSON containing only completed user prompts and final
+  assistant answers; and
+- request-id records for safe retries.
+
+The registry rejects foreign, expired, or incompatible sessions. A reused
+request ID with a different prompt/session context returns a conflict. In-
+process locks serialize turns and catalog writes. Moving to multiple writable
+runtime replicas requires a concurrency-safe catalog/index.
+
+## Tests and operational limits
+
+Run the backend test suite with:
 
 ```bash
 uv run pytest -q
 ```
 
-Useful manual questions:
+The Lambda executor limits are defined in
+`agent_backend/lambda_code_executor/lambda_function.py`:
 
-```text
-What is my latest available balance? Show the source date.
+| Limit | Value |
+| --- | ---: |
+| Python code | 20 KB |
+| Input files | 0 or 1 CSV |
+| CSV size | 4 MB |
+| Captured stdout/stderr | 200 KB per stream |
+| Child execution timeout | 20 seconds |
+| Child CPU limit | 18 seconds |
 
-Export all available transactions to CSV. Use pandas in Python to calculate
-total inflow, total outflow, and net cash flow. State the row count and date
-range used.
+The FastAPI request timeout defaults to 90 seconds and is bounded by the
+Next.js proxy to at most 120 seconds. Keep model calls, dataset exports, and
+Python programs within those limits.
 
-Use the transaction CSV to try a small cash-flow prediction. Explain why the
-result may be unreliable if the available history is small.
+## Deployment status
 
-Load the relevant analysis guides, then export all available transactions to
-CSV. Use pandas in Python to calculate total inflow, total outflow, and net cash
-flow. State the row count and date range used, and explain any data limits.
-```
-
-Expected trace:
-
-```text
-[agent] Working...
-[tool] export_transactions_csv
-[tool result] export_transactions_csv ...
-[tool] run_financial_python
-[tool result] run_financial_python ...
-[agent] Completed.
-```
-
-## Planned API Hosting
-
-Only the Python executor is deployed today. The Strands agent and API remain
-local. A future Lambda/API Gateway handler must implement the same invocation
-contract; then update only `FINFINE_AGENT_RUNTIME_URL` for the Next.js proxy.
+The repository contains both local and Lambda packaging paths. The Amplify
+backend creates the Docker image Lambda for the FastAPI service, but the
+`finfine-code-executor` Lambda and its scientific dependency layer are
+external. A future deployment can move the runtime behind another HTTP
+front-door without changing the `/invocations` contract; update the Next.js
+runtime URL and preserve the Cognito/session behavior.

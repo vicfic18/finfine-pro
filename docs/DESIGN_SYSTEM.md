@@ -1,151 +1,192 @@
-# FinFine Pro — Design System & Aesthetic Guidelines
-*The Architectural Convergence of Sarvam AI and CRED NeoPOP*
+# FinFine Pro design system
 
----
+This document records the visual conventions that are actually implemented in
+`src/app/globals.css`, the App Router pages, and the shared UI components. It is
+a lightweight code-aligned guide, not a separate token package.
 
-## 1. Executive Design Philosophy
+## Product character
 
-FinFine Pro is designed as an **award-winning, high-trust financial operating system** tailored for Indian Micro, Small, and Medium Enterprises (MSMEs). Rather than defaulting to generic enterprise SaaS templates or dark sci-fi tropes, FinFine Pro synthesizes two avant-garde Indian design benchmarks:
+FinFine combines a warm editorial surface with precise financial telemetry:
 
-1. **Sarvam AI’s Architectural Groundedness**: 
-   - **The Gateway Motif**: Architectural openings, arched portals, and structural grids inspired by classical Indian stone gateways and public urban spaces—signifying transition, inclusion, and transparent access.
-   - **Warm Editorial Canvas**: A luminous, tactile paper-and-stone light palette (`#FBF9F5`) reminiscent of premium archival financial documents and fine Indian literature.
-   - **Vernacular Dignity**: Respectful typography and natural multi-script poise (Hindi, Hinglish, Tamil, English).
+- architectural linework and gateway motifs on the landing and onboarding
+  surfaces;
+- high-contrast, paper-like content areas for forms and document review;
+- dark metric pods for cash runway, forecasts, and dense quantitative context;
+- rigid borders, compact labels, tabular numbers, and restrained motion; and
+- multilingual UI copy with English as the fallback.
 
-2. **CRED’s NeoPOP Post-Modernist Minimalism**:
-   - **Art as Interface**: Rejecting sterile neumorphism in favor of rigid structural geometry, deliberate physical depth, and subtle isometric/chamfered card elevations.
-   - **Tactile Micro-Physics**: High-friction spring micro-interactions, tangible button presses (`translate-y-[2px]` with high-contrast drop-edge shadows), and monospaced financial telemetry.
-   - **Selective High-Contrast Dark Modules**: Framing deterministic mathematical models (such as Days-to-Zero $D$ calculation and S3 telemetry) inside deep basalt and obsidian modules that sit atop the warm light paper canvas.
+The design is light-first. The dashboard uses white cards over a pale neutral
+background with a subdued texture; dark surfaces are reserved for emphasis.
 
----
+## Foundations
 
-## 2. Core Color Architecture (Light-First System)
+### Color tokens
 
-FinFine Pro is strictly a **Light Theme Application**. Visual hierarchy is achieved through nuanced tonal stone surfaces and selective high-contrast dark pods.
+The CSS variables in `src/app/globals.css` are the canonical values.
 
-### 2.1 The Canvas & Surfaces
-| Token Name | Hex Value | Semantic Usage |
-| :--- | :--- | :--- |
-| `canvas-primary` | `#FBF9F5` | Main viewport background; warm alabaster paper |
-| `canvas-stone` | `#F4F0E8` | Secondary container fill; warm stone grounding |
-| `surface-pure` | `#FFFFFF` | Primary card surfaces and interactive form wells |
-| `surface-muted` | `#EFEAE1` | Inactive tabs, divider accents, subtle inset trays |
-| `border-hairline` | `#E5E0D6` | 1px architectural grid lines and card borders |
-| `border-subtle` | `#D8D1C4` | Hover borders and active frame outlines |
+| Token | Value | Use |
+| --- | --- | --- |
+| `--background` | `#FBF9F5` | Warm application canvas for onboarding and document surfaces. |
+| `--foreground` | `#111215` | Primary ink and headings. |
+| `--card` | `#FFFFFF` | Cards and form surfaces. |
+| `--secondary` | `#F4F0E8` | Stone surfaces and onboarding rail. |
+| `--muted` | `#EFEAE1` | Inactive or secondary fills. |
+| `--muted-foreground` | `#71717A` | Metadata and helper text. |
+| `--border` | `#E5E0D6` | Default hairline borders. |
+| `--input` | `#D8D1C4` | Input outlines. |
+| `--ring` | `#E85D25` | Focus and terracotta interaction accent. |
+| `--finfine-terracotta` | `#E85D25` | Primary accent and active upload state. |
+| `--finfine-gold` | `#D97706` | Warnings and statutory attention. |
+| `--finfine-emerald` | `#059669` | Healthy, confirmed, or protected state. |
+| `--finfine-dark-pod` | `#111317` | Forecast and telemetry modules. |
 
-### 2.2 Post-Modernist Contrast & Accent Pods
-| Token Name | Hex Value | Semantic Usage |
-| :--- | :--- | :--- |
-| `dark-pod-bg` | `#111317` | High-contrast telemetry cards, dark terminal pods |
-| `dark-pod-surface`| `#1A1D24` | Elevated inner wells inside dark pods |
-| `dark-pod-border` | `#2D323F` | Hairline definition for dark modules |
-| `brand-terracotta`| `#E85D25` | Sarvam warm saffron/terracotta; primary CTA, key accents |
-| `brand-gold` | `#D97706` | Warning, pending GST liabilities, statutory alerts |
-| `solvency-emerald`| `#059669` | Positive cash runway, safe liquidity indicators |
-| `danger-crimson` | `#DC2626` | Immediate cash shortfall, statutory default risk |
+The dashboard also uses Tailwind neutral/emerald/orange classes directly. Keep
+new feature colors close to the existing neutral, terracotta, gold, emerald,
+and crimson vocabulary rather than introducing an unrelated palette.
 
-### 2.3 Typography Inks
-| Token Name | Hex Value | Usage |
-| :--- | :--- | :--- |
-| `ink-primary` | `#111215` | Hero headlines, primary display labels, bold statements |
-| `ink-secondary` | `#4B5563` | Body narrative, subheadings, explanations |
-| `ink-muted` | `#71717A` | Metadata, timestamps, helper descriptions |
-| `ink-inverted` | `#F9FAFB` | Text residing on dark telemetry modules |
+### Typography
 
----
+`globals.css` registers local fonts from `src/app/fonts/`:
 
-## 3. Typography Hierarchy
+| Role | Font | Weights / examples |
+| --- | --- | --- |
+| Display | PP Cirka | 400 and 700; page titles, section headings, hero copy. |
+| Interface | Gilroy | 600 and 700; labels, controls, body UI, navigation. |
+| Telemetry | System monospace utilities | Currency, dates, IDs, status labels, compact metrics. |
 
-The typographic voice is an intentional dialogue between **editorial gravitas** (Cirka) and **modern geometric efficiency** (Gilroy).
+The reusable classes are `.font-display` and `.font-sans`; the CSS variables
+are `--font-cirka` and `--font-gilroy`. Use `font-mono` or an explicit
+monospace stack for values that must align numerically.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  PP CIRKA (Display Serif)                                   │
-│  "Autonomous Cash Runway for the Bharat Enterprise"          │
-└─────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  GILROY (Geometric Sans-Serif)                              │
-│  "Real-time linear runway modeling and vernacular actions." │
-└─────────────────────────────────────────────────────────────┘
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  TABULAR MONOSPACE (Telemetry)                              │
-│  "D = 18.4 DAYS | GSTIN: 27AABCU9603R1ZM | SHA: c9f8a... "  │
-└─────────────────────────────────────────────────────────────┘
-```
+### Geometry and depth
 
-### 3.1 Font Family Mapping
-- **Primary Display Font (`font-display`)**: `PPCirka-Bold` & `PPCirka-Regular`.
-  - Used for: Page title, hero value proposition, section headers, big statement quotes.
-  - Characteristics: High contrast, razor-sharp serif terminals, editorial sophistication.
-  - Letter-spacing: Tightened slightly (`-0.02em` to `-0.01em`) on large headlines.
-- **Interface & Body Font (`font-sans`)**: `Gilroy-Bold` & `Gilroy-SemiBold`.
-  - Used for: Nav items, body paragraphs, form labels, buttons, vernacular dialogue bubbles.
-  - Characteristics: Clean geometric proportion, generous x-height, flawless legibility.
-- **Financial Monospace (`font-mono`)**: Tabular numbers for financial sums (`₹14,82,500`), Days-to-Zero formulas, S3 bucket keys, and status logs.
+- Prefer 1px neutral borders and rectangular or gently rounded surfaces.
+- Use solid offset shadows for primary onboarding actions and selected controls
+  (`3px–7px` offsets), not diffuse shadows as the main affordance.
+- Use uppercase monospace micro-labels with increased letter spacing for
+  sections, statuses, and telemetry metadata.
+- Use `tabular-nums` for money, counts, and days so columns remain stable.
+- Preserve visible focus rings; the onboarding inputs and dropzone use
+  terracotta focus treatments.
 
----
+## Page-level patterns
 
-## 4. NeoPOP Physicality & Interactive Physics
+### Landing and authentication
 
-Borrowing from CRED’s signature NeoPOP philosophy:
+`src/app/page.tsx` and `src/app/login/page.tsx` use a white canvas, centered
+FinFine branding, architectural SVG corners, the `mone-circle.png` ornamental
+asset, and PP Cirka display headlines. The landing page uses a soft indigo-to-
+orange gateway illustration and a pill-shaped sign-in/start action. Keep
+decorative SVGs `aria-hidden` when they do not convey content.
 
-### 4.1 Rigid Geometry & High-Art Depths
-1. **NeoPOP Hard Drop Shadow**:
-   - Instead of soft fuzzy ambient blurs, primary interactive elements feature solid, directional edge offsets:
-     `box-shadow: 3px 3px 0px #111215;`
-   - On hover: edge drops to `4px 4px 0px #111215;`
-   - On active/press: button shifts `translate(2px, 2px)` and shadow drops to `1px 1px 0px #111215;`.
-2. **Hairline Precision**:
-   - Cards use an unmistakable `1px solid var(--border-hairline)` outline with micro-chamfers (`rounded-xl` / `rounded-2xl`).
-3. **Tactile Inset Wells**:
-   - Form inputs and upload dropzones use subtle inset borders and recessed backgrounds (`#F4F0E8` / `#FFFFFF`) that feel like physical trays.
+### Onboarding
 
----
+The onboarding shell is a responsive three-part layout on wide screens:
 
-## 5. Micro-Animations & Techy Telemetry
+1. a stone progress rail;
+2. an architectural visual panel; and
+3. a white form surface with fixed actions on small screens.
 
-### 5.1 The Solvency Radar Pulse
-- A continuous, understated concentric radar ripple behind the Days-to-Zero gauge.
-- Signifies autonomous background monitoring without overwhelming the user.
+The class family is `onboarding-*` in `globals.css`. Form controls are compact,
+square-cornered, and show a terracotta border plus offset shadow on focus. File
+dropzones use a dashed border and an active terracotta state. Readiness and
+attestation cards use dark pods with emerald or gold status accents.
 
-### 5.2 Vernacular Shifter
-- Quick, smooth horizontal tab switches between English, Hinglish, Hindi (हिन्दी), and Tamil (தமிழ்).
-- Accompanying AI negotiation previews update with a micro-fade slide transition.
+### Dashboard shell
 
-### 5.3 Multimodal File Drop Interaction
-- Drag-over state transforms the dropzone with a terracotta hairline pulse (`#E85D25`) and a tactile lift.
-- Immediate file taxonomy feedback (e.g. tagging as `Bank Statement`, `B2B Tax Invoice`, or `Handwritten Slip`).
+`src/app/dashboard/layout.tsx` provides:
 
----
+- a narrow desktop icon rail with tooltip labels;
+- a mobile bottom bar with four primary items and a More drawer;
+- a neutral `#f4f5f7` main surface with the Mone texture at low opacity; and
+- consistent spacing through Tailwind utilities.
 
-## 6. Component Catalog & Patterns
+The navigation order is Dashboard, Documents, Chat, Obligations, Predictions,
+Tax Compliance, and Settings. `LanguageSelector` is available in the rail and
+mobile menu.
 
-### 6.1 The Gateway Hero Banner
-- Features architectural gateway geometry: subtle SVG arch line-work framing the high-impact Cirka headline.
-- Emphasizes the $100 evaluation budget / serverless AWS Amplify Gen 2 foundation.
+### Dashboard content
 
-### 6.2 The Days-to-Zero ($D$) Telemetry Module
-- High-contrast dark pod nested in the light layout.
-- Displays real-time deterministic solvency:
-  $$D = \frac{\text{Liquid Cash} + \sum \text{Verified Inflows}}{\text{Daily Essential Burn} + \sum \text{Unavoidable Outflows}}$$
-- Incorporates interactive slider/toggle for what-if scenario testing.
+The dashboard uses a bordered white editorial grid. The primary metric row
+contains total liquid cash, spendable cash, cash runway, and operating
+velocity. Forecast charts, commitments, and risk/calendar modules follow the
+same border/divider rhythm. Use dark backgrounds for dense prediction context
+and white/neutral cards for lists and editable data.
 
-### 6.3 Multimodal S3 Document Ingestion Center
-- Direct integration with AWS Amplify Gen 2 `uploadData` and `list`.
-- Retains instant file uploading, link retrieval, and S3 file listing with a tactile NeoPOP finish.
+### Documents and review
 
-### 6.4 Vernacular Counterparty Action Engine
-- Card depicting automated, culturally calibrated payment negotiations:
-  - Vendor deferral prompt in polite conversational Hinglish.
-  - Customer payment reminder in formal Tamil or Hindi.
-  - Statutory GST advance notice to avoid Section 50 interest penalties.
+The document page uses the `documents-*` class family, category tabs, a compact
+upload card, grouped history rows, status chips, and expandable review panels.
+Validation issues use gold/orange; successful processing uses emerald; errors
+use crimson. Corrections should remain visually separate from extracted values,
+matching the append-only confirmation model.
 
----
+## Component conventions
 
-## 7. Accessibility & Performance Checklist
-- [x] High-contrast text compliance (minimum 7:1 ratio for basalt ink on paper canvas).
-- [x] Zero layout shift with local font preloading via `next/font/local`.
-- [x] Pure CSS keyframe animations (zero heavy animation libraries, keeping runtime featherlight).
-- [x] Responsive flex/grid architecture optimized for mobile, tablet, and widescreen.
+Shared components worth reusing before adding new patterns include:
+
+- `BrandLogo` for FinFine wordmarks and size variants;
+- `LanguageSelector` for the four supported UI languages;
+- `FinFineProLoader` for loading states;
+- `Tooltip` primitives for desktop icon navigation;
+- `DocumentUploadZone`, `DocumentReview`, and `PdfDropzone` for document flows;
+- `ForecastingCharts`, `RiskCalendar`, and dashboard widgets for metrics; and
+- `OnboardingShell`, `StepHeader`, and the onboarding field/card classes for
+  multi-step forms.
+
+Prefer composing these primitives and existing Tailwind utilities over adding a
+new global CSS abstraction for one screen.
+
+## Motion and interaction
+
+Implemented motion is CSS-based and includes:
+
+- `animate-gateway-float` for the landing gateway illustration;
+- ornamental top/bottom circle entry and spin animations;
+- chart line/area reveal animations; and
+- loader word-reveal/slide-away sequences.
+
+Onboarding controls use short transitions for border, shadow, opacity, and
+translation. Use `prefers-reduced-motion` for new non-essential motion; the
+existing onboarding rules already disable its transitions under that media
+query. Never make animation the only indicator of processing or status.
+
+## Internationalization
+
+`src/lib/i18n/index.ts` registers:
+
+| Code | Language |
+| --- | --- |
+| `en` | English |
+| `hi` | Hindi |
+| `ta` | Tamil |
+| `ml` | Malayalam |
+
+English is the fallback. The selected language is stored in browser
+`localStorage` under `finfine_language`, and the document `lang` attribute is
+updated. New user-facing strings should be added to all locale files or given a
+clear English fallback through `t(key, fallback)`.
+
+## Accessibility and responsive behavior
+
+- Use semantic headings and `aria-label` values for icon-only controls.
+- Preserve keyboard focus styles and visible button disabled states.
+- Do not rely on color alone for document/forecast status; include text or an
+  icon label.
+- Keep dropzones and dialogs operable by keyboard, with clear focus targets.
+- Follow the existing breakpoints: the desktop sidebar collapses into a mobile
+  bottom bar, onboarding hides the visual panel below 1,080px, and form grids
+  become one column below 700px.
+- Use local font files and CSS animation rather than introducing a heavy motion
+  dependency for simple transitions.
+
+## Implementation references
+
+- Global tokens, fonts, component classes, and keyframes: `src/app/globals.css`
+- Landing: `src/app/page.tsx`
+- Authentication: `src/app/login/page.tsx`
+- Onboarding: `src/components/onboarding/`
+- Dashboard shell: `src/app/dashboard/layout.tsx`
+- Dashboard widgets: `src/components/dashboard/`
+- Document UI: `src/components/ingestion/`
+- Localized strings: `src/lib/i18n/locales/`
