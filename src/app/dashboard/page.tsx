@@ -92,7 +92,7 @@ export default function DashboardPage() {
         <div className="pt-2 flex flex-col sm:flex-row sm:items-baseline justify-between gap-3">
           <div>
             <span className="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-neutral-400 block mb-1">
-              Operating Profile
+              Welcome
             </span>
             <h1 className="font-display font-bold text-3xl sm:text-4xl lg:text-5xl text-neutral-950 tracking-tight leading-none">
               {data.businessName || 'My Business'}
@@ -101,87 +101,87 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 2. Primary KPI Bar - Large, Typographically Commanding Numbers */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-neutral-300 bg-white">
+      {/* 2. Primary KPI Bar - Two Column Grid on Mobile, Four Column on Desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-neutral-300">
         
         {/* KPI 01: Total Liquid Cash */}
-        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+        <div className="p-4 sm:p-6 lg:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
           <div>
-            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+            <span className="font-mono text-[9.5px] sm:text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.15em] sm:tracking-[0.18em] block truncate">
               {t('dashboard.totalLiquidCash', 'Total Liquid Cash')}
             </span>
-            <div className="my-3 font-display text-3xl sm:text-4xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums">
-              <span className="text-2xl sm:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
+            <div className="my-2 sm:my-3 font-display text-xl sm:text-3xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums truncate">
+              <span className="text-base sm:text-2xl lg:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
               {data.totalLiquidBalance.toLocaleString('en-IN')}
             </div>
           </div>
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
-            <span>Bank ledger balance</span>
-            <span className="font-bold text-neutral-900">Reconciled</span>
+          <div className="pt-2 sm:pt-3 border-t border-neutral-100 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-neutral-500">
+            <span className="truncate">Bank ledger</span>
+            <span className="font-bold text-neutral-900 shrink-0">Reconciled</span>
           </div>
         </div>
 
         {/* KPI 02: Spendable Cash */}
-        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+        <div className="p-4 sm:p-6 lg:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
           <div>
-            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+            <span className="font-mono text-[9.5px] sm:text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.15em] sm:tracking-[0.18em] block truncate">
               {t('dashboard.spendableCash', 'Spendable Cash')}
             </span>
-            <div className="my-3 font-display text-3xl sm:text-4xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums">
-              <span className="text-2xl sm:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
+            <div className="my-2 sm:my-3 font-display text-xl sm:text-3xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums truncate">
+              <span className="text-base sm:text-2xl lg:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
               {data.spendableLiquidity.toLocaleString('en-IN')}
             </div>
           </div>
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
-            <span>After ring-fenced lockbox</span>
-            <span className="font-bold text-emerald-700">Protected</span>
+          <div className="pt-2 sm:pt-3 border-t border-neutral-100 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-neutral-500">
+            <span className="truncate">Lockbox buffer</span>
+            <span className="font-bold text-emerald-700 shrink-0">Protected</span>
           </div>
         </div>
 
         {/* KPI 03: Cash Runway */}
-        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+        <div className="p-4 sm:p-6 lg:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
           <div>
-            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
+            <span className="font-mono text-[9.5px] sm:text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.15em] sm:tracking-[0.18em] block truncate">
               {t('dashboard.cashRunway', 'Cash Runway')}
             </span>
-            <div className="my-3 flex items-baseline">
-              <div className={`font-display text-4xl sm:text-5xl lg:text-[50px] font-bold tracking-tight leading-none tabular-nums ${
+            <div className="my-2 sm:my-3 flex items-baseline truncate">
+              <div className={`font-display text-2xl sm:text-4xl lg:text-[50px] font-bold tracking-tight leading-none tabular-nums ${
                 data.daysToZero < 14 ? 'text-orange-600' : 'text-neutral-950'
               }`}>
                 {data.daysToZero}
               </div>
-              <span className="text-base sm:text-lg font-bold font-mono text-neutral-400 ml-2 tracking-wider uppercase">
+              <span className="text-xs sm:text-base lg:text-lg font-bold font-mono text-neutral-400 ml-1.5 sm:ml-2 tracking-wider uppercase">
                 {t('dashboard.days', 'Days')}
               </span>
             </div>
           </div>
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
-            <span>Zero-cash depletion</span>
-            <span className={data.daysToZero < 14 ? 'text-orange-600 font-bold' : 'text-emerald-700 font-bold'}>
-              {data.daysToZero < 14 ? 'Low Runway' : 'Solvent Buffer'}
+          <div className="pt-2 sm:pt-3 border-t border-neutral-100 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-neutral-500">
+            <span className="truncate">Zero depletion</span>
+            <span className={`font-bold shrink-0 ${data.daysToZero < 14 ? 'text-orange-600' : 'text-emerald-700'}`}>
+              {data.daysToZero < 14 ? 'Low Runway' : 'Solvent'}
             </span>
           </div>
         </div>
 
         {/* KPI 04: Operating Velocity */}
-        <div className="p-6 sm:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
+        <div className="p-4 sm:p-6 lg:p-7 bg-white flex flex-col justify-between hover:bg-neutral-50/40 transition-colors">
           <div>
-            <span className="font-mono text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.18em] block">
-              04 / {t('dashboard.operatingVelocity', 'Operating Velocity')}
+            <span className="font-mono text-[9.5px] sm:text-[10.5px] font-bold text-neutral-400 uppercase tracking-[0.15em] sm:tracking-[0.18em] block truncate">
+              {t('dashboard.operatingVelocity', 'Operating Velocity')}
             </span>
-            <div className="my-3 flex items-baseline">
-              <div className="font-display text-3xl sm:text-4xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums">
-                <span className="text-2xl sm:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
+            <div className="my-2 sm:my-3 flex items-baseline truncate">
+              <div className="font-display text-xl sm:text-3xl lg:text-[42px] font-bold text-neutral-950 tracking-tight leading-none tabular-nums truncate">
+                <span className="text-base sm:text-2xl lg:text-3xl text-neutral-400 font-light font-sans mr-0.5 select-none">₹</span>
                 {data.netDailyBurn.toLocaleString('en-IN')}
               </div>
-              <span className="text-xs font-bold font-mono text-neutral-400 ml-1.5 uppercase">
+              <span className="text-[10px] sm:text-xs font-bold font-mono text-neutral-400 ml-1 sm:ml-1.5 uppercase shrink-0">
                 /day
               </span>
             </div>
           </div>
-          <div className="pt-3 border-t border-neutral-100 flex items-center justify-between text-[11px] font-mono text-neutral-500">
-            <span>Net daily burn rate</span>
-            <span className="font-bold text-neutral-900">30d Avg</span>
+          <div className="pt-2 sm:pt-3 border-t border-neutral-100 flex items-center justify-between text-[10px] sm:text-[11px] font-mono text-neutral-500">
+            <span className="truncate">Daily burn</span>
+            <span className="font-bold text-neutral-900 shrink-0">30d Avg</span>
           </div>
         </div>
 

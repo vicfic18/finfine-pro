@@ -4,7 +4,7 @@ import React from 'react';
 
 interface BrandLogoProps {
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 /**
@@ -26,8 +26,12 @@ export default function BrandLogo({ className = '', size = 'sm' }: BrandLogoProp
       pro: 'text-base sm:text-lg',
     },
     lg: {
-      main: 'text-4xl sm:text-5xl',
-      pro: 'text-2xl sm:text-3xl',
+      main: 'text-3xl sm:text-4xl',
+      pro: 'text-xl sm:text-2xl',
+    },
+    xl: {
+      main: 'text-3xl sm:text-4xl md:text-5xl',
+      pro: 'text-xl sm:text-2xl md:text-3xl',
     },
   }[size];
 
