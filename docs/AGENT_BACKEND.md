@@ -23,6 +23,28 @@ validates the request, forwards the Cognito access token, applies a timeout,
 and sanitizes upstream failures. Only the server-side runtime URL changes when
 the FastAPI service is later moved behind Lambda/API Gateway.
 
+## Voice Chat
+
+Voice chat is authenticated tap-to-talk. The browser uploads a short WAV
+recording for Amazon Transcribe, then submits the editable transcript through
+the existing Strands agent. Amazon Polly speaks the completed, owner-scoped
+assistant answer. The agent remains on the configured OpenRouter-compatible
+provider; voice chat does not invoke Amazon Bedrock.
+
+The speech selector is independent of the app's display language. English uses
+`en-IN`, Hindi uses `hi-IN`, and Hinglish asks Transcribe to identify between
+`en-IN` and `hi-IN`. Replies follow the selected mode; Hindi text is written in
+Devanagari. Audio is processed ephemerally and is not added to chat history.
+The agent invokes a private Node.js Lambda for Transcribe's streaming SDK; the
+helper has no public URL and can only start Transcribe streams.
+
+`POLLY_VOICE_ID` is customizable. The default `Kajal` voice is bilingual for
+Indian English and Hindi. A replacement voice must support both `en-IN` and
+`hi-IN` with the selected `POLLY_ENGINE`; the backend checks this with Polly
+when voice settings load (on the first voice API call per runtime container)
+and returns a clear configuration error if it does not. The default speech
+region is `ap-south-1`.
+
 ## Agent Tools
 
 ### `load_analysis_skill`
@@ -131,6 +153,12 @@ AGENT_SESSION_PREFIX=agent-sessions/
 AGENT_VERSION=v1
 AGENT_SESSION_RETENTION_DAYS=30
 AGENT_REQUEST_TIMEOUT_SECONDS=90
+VOICE_AWS_REGION=ap-south-1
+POLLY_VOICE_ID=Kajal
+POLLY_ENGINE=neural
+POLLY_OUTPUT_FORMAT=mp3
+VOICE_MAX_DURATION_SECONDS=30
+VOICE_MAX_AUDIO_BYTES=1048576
 CODE_EXECUTOR_REGION=ap-south-1
 CODE_EXECUTOR_FUNCTION_NAME=finfine-code-executor
 OPENROUTER_API_KEY=replace-with-your-own-openrouter-key
@@ -146,6 +174,28 @@ deletion also requires `s3:DeleteObject`, and snapshot cleanup requires
 not present in `amplify/storage/resource.ts`, so Amplify does not grant browser
 identities access to it. The bucket encrypts objects at rest, and the backend
 adds a prefix-scoped lifecycle rule whose default retention is 30 days.
+
+For local voice testing, also set `VOICE_TRANSCRIBER_FUNCTION_NAME` from the
+`custom.voiceTranscriberFunctionName` output and grant the local AWS identity
+`lambda:InvokeFunction`, `polly:DescribeVoices`, and `polly:SynthesizeSpeech`.
+Amplify configures these values and permissions for the deployed agent runtime.
+
+To test the complete portal locally without deploying the voice Lambda, set:
+
+```text
+VOICE_TRANSCRIBER_MODE=local
+VOICE_AWS_REGION=ap-south-1
+POLLY_VOICE_ID=Kajal
+POLLY_ENGINE=neural
+```
+
+Leave `VOICE_TRANSCRIBER_FUNCTION_NAME` empty in this mode. Start the FastAPI
+runtime from `agent_backend` with `uv run python -m finfine_agent.api`, set the
+Next.js `FINFINE_AGENT_RUNTIME_URL=http://127.0.0.1:8080`, and run `npm run dev`.
+The local Node helper uses the normal AWS credential chain to call Transcribe
+Streaming directly; FastAPI calls Polly directly. The signed-in AWS identity
+therefore needs `transcribe:StartStreamTranscription`, `polly:DescribeVoices`,
+and `polly:SynthesizeSpeech`. No Lambda or Bedrock call is used in local mode.
 
 After `npx ampx sandbox`, take the Cognito pool/client, storage bucket, and
 region values from `amplify_outputs.json`. Custom outputs also include the

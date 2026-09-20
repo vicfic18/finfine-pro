@@ -1,3 +1,5 @@
+import { isSpeechMode, type SpeechMode } from '@/lib/voice-contract';
+
 export const MAX_CHAT_PROMPT_LENGTH = 4_000;
 export const MAX_CHAT_ID_LENGTH = 64;
 
@@ -8,6 +10,7 @@ export type ChatRequest = {
   prompt: string;
   requestId: string;
   sessionId?: string;
+  speechMode?: SpeechMode;
 };
 
 export type ChatSuccessResponse = {
@@ -131,7 +134,20 @@ export function parseChatRequest(value: unknown):
     sessionId = value.sessionId.trim();
   }
 
-  return { ok: true, value: { prompt, requestId, sessionId } };
+  let speechMode: SpeechMode | undefined;
+  if (value.speechMode !== undefined) {
+    if (!isSpeechMode(value.speechMode)) {
+      return {
+        ok: false,
+        code: 'invalid_speech_mode',
+        message: 'speechMode must be english, hindi, or hinglish.',
+        requestId,
+      };
+    }
+    speechMode = value.speechMode;
+  }
+
+  return { ok: true, value: { prompt, requestId, sessionId, speechMode } };
 }
 
 export function isChatSuccessResponse(value: unknown): value is ChatSuccessResponse {

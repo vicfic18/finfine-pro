@@ -76,7 +76,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.ok) {
     return errorResponse(parsed.requestId, 400, parsed.code, parsed.message);
   }
-  const { prompt, requestId, sessionId } = parsed.value;
+  const { prompt, requestId, sessionId, speechMode } = parsed.value;
 
   const authorization = bearerToken(request);
   if (!authorization) {
@@ -125,6 +125,7 @@ export async function POST(request: Request): Promise<Response> {
         prompt,
         requestId,
         ...(sessionId === undefined ? {} : { sessionId }),
+        ...(speechMode === undefined ? {} : { speechMode }),
       }),
       signal,
       cache: 'no-store',

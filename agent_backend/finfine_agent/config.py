@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -210,5 +211,66 @@ class RuntimeSettings:
             request_timeout_seconds=timeout,
             aws_region=region,
             session_region=os.getenv("AGENT_SESSION_REGION", region).strip() or region,
+            aws_profile=os.getenv("AWS_PROFILE") or None,
+        )
+
+
+@dataclass(frozen=True)
+class VoiceSettings:
+    """Voice-service configuration, kept separate from chat/model settings."""
+
+    aws_region: str
+    polly_voice_id: str
+    polly_engine: str
+    polly_output_format: str
+    max_duration_seconds: int
+    max_audio_bytes: int
+    transcriber_mode: str
+    transcriber_function_name: str
+    transcriber_region: str
+    aws_profile: str | None = None
+
+    @classmethod
+    def from_environment(cls) -> VoiceSettings:
+        _load_local_environment()
+        region = os.getenv("VOICE_AWS_REGION", "ap-south-1").strip()
+        transcriber_region = os.getenv("VOICE_TRANSCRIBER_REGION", os.getenv("AWS_REGION", "ap-south-1")).strip()
+        voice_id = os.getenv("POLLY_VOICE_ID", "Kajal").strip()
+        engine = os.getenv("POLLY_ENGINE", "neural").strip().lower()
+        output_format = os.getenv("POLLY_OUTPUT_FORMAT", "mp3").strip().lower()
+        max_duration = int(os.getenv("VOICE_MAX_DURATION_SECONDS", "30"))
+        max_audio_bytes = int(os.getenv("VOICE_MAX_AUDIO_BYTES", "1048576"))
+        transcriber_mode = os.getenv("VOICE_TRANSCRIBER_MODE", "lambda").strip().lower()
+        transcriber = os.getenv("VOICE_TRANSCRIBER_FUNCTION_NAME", "").strip()
+
+        if not region:
+            raise ValueError("VOICE_AWS_REGION cannot be empty")
+        if not transcriber_region:
+            raise ValueError("VOICE_TRANSCRIBER_REGION cannot be empty")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", voice_id):
+            raise ValueError("POLLY_VOICE_ID must be a valid Amazon Polly voice ID")
+        if engine not in {"standard", "neural", "long-form", "generative"}:
+            raise ValueError("POLLY_ENGINE must be standard, neural, long-form, or generative")
+        if output_format != "mp3":
+            raise ValueError("POLLY_OUTPUT_FORMAT must be mp3 for the voice playback API")
+        if not 1 <= max_duration <= 30:
+            raise ValueError("VOICE_MAX_DURATION_SECONDS must be between 1 and 30")
+        if not 1 <= max_audio_bytes <= 1_048_576:
+            raise ValueError("VOICE_MAX_AUDIO_BYTES must be between 1 and 1048576")
+        if transcriber_mode not in {"lambda", "local"}:
+            raise ValueError("VOICE_TRANSCRIBER_MODE must be lambda or local")
+        if transcriber_mode == "lambda" and not transcriber:
+            raise RuntimeError("VOICE_TRANSCRIBER_FUNCTION_NAME is required for voice transcription")
+
+        return cls(
+            aws_region=region,
+            polly_voice_id=voice_id,
+            polly_engine=engine,
+            polly_output_format=output_format,
+            max_duration_seconds=max_duration,
+            max_audio_bytes=max_audio_bytes,
+            transcriber_mode=transcriber_mode,
+            transcriber_function_name=transcriber,
+            transcriber_region=transcriber_region,
             aws_profile=os.getenv("AWS_PROFILE") or None,
         )
