@@ -58,19 +58,23 @@ export type SafeDocument = {
   updatedAt?: string;
 };
 
-const region = process.env.AWS_REGION || (outputs as { auth?: { aws_region?: string } }).auth?.aws_region || 'ap-south-1';
-const custom = (outputs as unknown as { custom?: Record<string, string> }).custom || {};
-const table = (env: string, output: string, fallback: string) => process.env[env] || custom[output] || fallback;
-const names = {
-  onboarding: table('MERCHANT_ONBOARDING_TABLE_NAME', 'merchantOnboardingTableName', 'MerchantOnboarding'),
-  documents: table('DOCUMENT_RECORD_TABLE_NAME', 'documentRecordTableName', 'DocumentRecord'),
-  settings: table('MERCHANT_SETTINGS_TABLE_NAME', 'merchantSettingsTableName', 'MerchantFinancialSettings'),
-  cash: table('CASH_POSITION_TABLE_NAME', 'cashPositionTableName', 'CashPositionSnapshot'),
-};
+function getTableNames() {
+  const custom = (outputs as unknown as { custom?: Record<string, string> }).custom || {};
+  const table = (env: string, output: string, fallback: string) => process.env[env] || custom[output] || fallback;
+  return {
+    onboarding: table('MERCHANT_ONBOARDING_TABLE_NAME', 'merchantOnboardingTableName', 'MerchantOnboarding-zss75iliwzfp5aps6rtut7gnuu-NONE'),
+    documents: table('DOCUMENT_RECORD_TABLE_NAME', 'documentRecordTableName', 'DocumentRecord-zss75iliwzfp5aps6rtut7gnuu-NONE'),
+    settings: table('MERCHANT_SETTINGS_TABLE_NAME', 'merchantSettingsTableName', 'MerchantFinancialSettings-zss75iliwzfp5aps6rtut7gnuu-NONE'),
+    cash: table('CASH_POSITION_TABLE_NAME', 'cashPositionTableName', 'CashPositionSnapshot-zss75iliwzfp5aps6rtut7gnuu-NONE'),
+  };
+}
 
-const client = DynamoDBDocumentClient.from(new DynamoDBClient(getAwsClientConfig(region)), {
-  marshallOptions: { removeUndefinedValues: true },
-});
+function getClient(): DynamoDBDocumentClient {
+  const targetRegion = process.env.AWS_REGION || (outputs as { auth?: { aws_region?: string } }).auth?.aws_region || 'ap-south-1';
+  return DynamoDBDocumentClient.from(new DynamoDBClient(getAwsClientConfig(targetRegion)), {
+    marshallOptions: { removeUndefinedValues: true },
+  });
+}
 
 let testGateOverride: ((requestOrTenantId: Request | string) => Promise<string>) | undefined;
 
@@ -114,12 +118,14 @@ function publicRecord(item: Record<string, any> | undefined, tenantId: string): 
 }
 
 export async function getOnboarding(tenantId: string): Promise<OnboardingRecord> {
-  const result = await client.send(new GetCommand({ TableName: names.onboarding, Key: { id: `onboarding-${tenantId}` }, ConsistentRead: true }));
+  const names = getTableNames();
+  const result = await getClient().send(new GetCommand({ TableName: names.onboarding, Key: { id: `onboarding-${tenantId}` }, ConsistentRead: true }));
   return publicRecord(result.Item as Record<string, any> | undefined, tenantId);
 }
 
 async function listDocuments(tenantId: string): Promise<Record<string, any>[]> {
-  const result = await client.send(new ScanCommand({
+  const names = getTableNames();
+  const result = await getClient().send(new ScanCommand({
     TableName: names.documents,
     FilterExpression: 'tenantId = :tenantId',
     ExpressionAttributeValues: { ':tenantId': tenantId },
@@ -272,7 +278,8 @@ export async function updateOnboarding(tenantId: string, patch: OnboardingPatch)
     status: patch.status || (current.status === 'DRAFT' ? 'IN_PROGRESS' : current.status),
     tenantId,
   }, tenantId);
-  await client.send(new PutCommand({ TableName: names.onboarding, Item: { ...next, tenantId, updatedAt: new Date().toISOString() } }));
+  const names = getTableNames();
+  await getClient().send(new PutCommand({ TableName: names.onboarding, Item: { ...next, tenantId, updatedAt: new Date().toISOString() } }));
   return next;
 }
 
@@ -352,7 +359,8 @@ export async function completeOnboarding(
     updatedAt: completedAt,
     __typename: 'CashPositionSnapshot',
   };
-  await client.send(new TransactWriteCommand({
+  const names = getTableNames();
+  await getClient().send(new TransactWriteCommand({
     TransactItems: [
       {
         Put: {

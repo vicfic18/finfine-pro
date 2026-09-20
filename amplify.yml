@@ -9,6 +9,7 @@ frontend:
   phases:
     build:
       commands:
+        - env | grep -E '^(FINFINE|COGNITO|DOCUMENT|TRANSACTION|OBLIGATION|PRODUCT|PURCHASE|SALE|CASH|SUPPLIER|MERCHANT|RECURRING|EXPECTED|INVENTORY|STATUTORY|S3|MODEL|GROQ|CODE|AWS_REGION)' >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next

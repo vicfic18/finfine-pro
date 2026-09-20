@@ -25,8 +25,8 @@ const authOutputs = outputs as AuthOutputs;
 const verifierCache = new Map<string, ReturnType<typeof CognitoJwtVerifier.create>>();
 
 function authConfig(): { userPoolId: string; clientId: string } {
-  const userPoolId = process.env.COGNITO_USER_POOL_ID?.trim() || authOutputs.auth?.user_pool_id?.trim();
-  const clientId = process.env.COGNITO_CLIENT_ID?.trim() || authOutputs.auth?.user_pool_client_id?.trim();
+  const userPoolId = process.env.COGNITO_USER_POOL_ID?.trim() || authOutputs.auth?.user_pool_id?.trim() || 'ap-south-1_oQDlsmrCQ';
+  const clientId = process.env.COGNITO_CLIENT_ID?.trim() || authOutputs.auth?.user_pool_client_id?.trim() || '2a80r6cf9l8k0a3tvevg5uvqi3';
   if (!userPoolId || !clientId) throw new AuthenticationConfigurationError();
   return { userPoolId, clientId };
 }
