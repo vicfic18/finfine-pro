@@ -13,7 +13,9 @@ TOOL_TITLES = {
     "get_latest_balance": "Checking the latest balance",
     "get_transactions": "Reviewing transactions",
     "get_upcoming_obligations": "Checking upcoming obligations",
+    "get_business_data": "Reviewing business records",
     "export_transactions_csv": "Preparing transaction data",
+    "export_business_data_csv": "Preparing business data",
     "run_financial_python": "Running a financial calculation",
 }
 

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatMessage, type ChatMessageData } from '@/components/prompt-kit/message';
+import type { ChainOfThoughtStepData } from '@/components/prompt-kit/chain-of-thought';
 import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
 import { ThinkingBar } from '@/components/prompt-kit/thinking-bar';
 import { isChatStreamEvent, isUuid, type ChatStreamEvent, type ConversationListResponse, type ConversationResponse, type ConversationSummary } from '@/lib/chat-contract';
@@ -129,6 +130,31 @@ function HistoryList({ conversations, selectedId, deletingId, loading, onOpen, o
   );
 }
 
+function saveStepsToSessionStorage(key: string, steps: ChainOfThoughtStepData[]) {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(`ff_cot_${key}`, JSON.stringify(steps));
+    }
+  } catch {
+    // Ignore storage quota or security errors
+  }
+}
+
+function getStepsFromSessionStorage(key: string): ChainOfThoughtStepData[] | undefined {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      const data = window.sessionStorage.getItem(`ff_cot_${key}`);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) return parsed as ChainOfThoughtStepData[];
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return undefined;
+}
+
 function ChatboxContent() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -147,6 +173,7 @@ function ChatboxContent() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -173,6 +200,11 @@ function ChatboxContent() {
       router.replace('/dashboard/chat', { scroll: false });
       return;
     }
+
+    if (selectedConversationId && selectedConversationId === activeSessionIdRef.current) {
+      return;
+    }
+
     const controller = new AbortController();
 
     (async () => {
@@ -184,6 +216,7 @@ function ChatboxContent() {
       setIsConversationLoading(Boolean(selectedConversationId));
       setMessages([]);
       setSessionId(selectedConversationId);
+      activeSessionIdRef.current = selectedConversationId;
       try {
         await refreshHistory(controller.signal);
         if (selectedConversationId) {
@@ -194,9 +227,22 @@ function ChatboxContent() {
             throw new Error(errorMessageFor(payload, 'Could not load this conversation.'));
           }
           setSessionId(payload.conversation.sessionId);
-          setMessages(payload.conversation.messages.slice(-MAX_MESSAGES).map((message) => ({ id: message.id, role: message.role, content: message.content, status: 'complete', createdAt: Date.parse(message.createdAt), requestId: message.requestId })));
+          activeSessionIdRef.current = payload.conversation.sessionId;
+          setMessages(payload.conversation.messages.slice(-MAX_MESSAGES).map((message) => {
+            const cachedSteps = getStepsFromSessionStorage(message.id) || getStepsFromSessionStorage(message.requestId);
+            return {
+              id: message.id,
+              role: message.role,
+              content: message.content,
+              status: 'complete',
+              createdAt: Date.parse(message.createdAt),
+              requestId: message.requestId,
+              steps: message.steps ?? cachedSteps,
+            };
+          }));
         } else {
           setSessionId(null);
+          activeSessionIdRef.current = null;
           setMessages([]);
         }
       } catch (error) {
@@ -244,6 +290,8 @@ function ChatboxContent() {
             const index = steps.findIndex((step) => step.id === event.step.id);
             if (index >= 0) steps[index] = event.step;
             else steps.push(event.step);
+            saveStepsToSessionStorage(assistantId, steps);
+            saveStepsToSessionStorage(requestId, steps);
             return { ...message, steps };
           }));
         } else if (event.type === 'text_delta') {
@@ -263,9 +311,12 @@ function ChatboxContent() {
       if (activeRequestIdRef.current !== requestId) return;
       if (!completedAnswer || !completedSessionId) throw new Error('FinFine returned an incomplete response.');
       updateMessage(assistantId, { content: completedAnswer, status: 'complete' });
+      activeSessionIdRef.current = completedSessionId;
       setSessionId(completedSessionId);
       setSessionUnavailable(false);
-      if (!requestSessionId) router.replace(`/dashboard/chat?conversation=${encodeURIComponent(completedSessionId)}`, { scroll: false });
+      if (!requestSessionId && typeof window !== 'undefined') {
+        window.history.replaceState(null, '', `/dashboard/chat?conversation=${encodeURIComponent(completedSessionId)}`);
+      }
       await refreshHistory().catch(() => undefined);
     } catch (error) {
       if (activeRequestIdRef.current !== requestId) return;
@@ -278,7 +329,7 @@ function ChatboxContent() {
         setIsPending(false);
       }
     }
-  }, [refreshHistory, router, updateMessage]);
+  }, [refreshHistory, updateMessage]);
 
   const sendMessage = useCallback(async (rawPrompt: string) => {
     const prompt = rawPrompt.trim().slice(0, MAX_PROMPT_LENGTH);
@@ -313,6 +364,7 @@ function ChatboxContent() {
 
   const startNewChat = useCallback(() => {
     stopRequest();
+    activeSessionIdRef.current = null;
     setMessages([]);
     setSessionId(null);
     setSessionUnavailable(false);
@@ -323,6 +375,10 @@ function ChatboxContent() {
   }, [router, stopRequest]);
 
   const openConversation = useCallback((nextSessionId: string) => {
+    if (nextSessionId === activeSessionIdRef.current) {
+      setHistoryOpen(false);
+      return;
+    }
     stopRequest();
     setHistoryOpen(false);
     router.push(`/dashboard/chat?conversation=${encodeURIComponent(nextSessionId)}`, { scroll: false });
@@ -337,6 +393,7 @@ function ChatboxContent() {
       if (!response.ok || payload.status !== 'success') throw new Error(errorMessageFor(payload, 'Could not delete this conversation.'));
       setConversations((current) => current.filter((item) => item.sessionId !== conversation.sessionId));
       if (conversation.sessionId === sessionId) {
+        activeSessionIdRef.current = null;
         setMessages([]);
         setSessionId(null);
         setDraft('');

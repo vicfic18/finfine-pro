@@ -39,16 +39,19 @@ def test_create_agent_registers_financial_and_code_tools() -> None:
 
     assert result["model"] == "fake-model"
     assert "Current local date and time:" in captured["system_prompt"]
-    assert captured["tools"][0].tool_name == "load_analysis_skill"
-    assert [tool.tool_name for tool in captured["tools"][1:4]] == [
+    assert [tool.tool_name for tool in captured["tools"]] == [
+        "load_analysis_skill",
         "get_latest_balance",
         "get_transactions",
         "get_upcoming_obligations",
+        "get_business_data",
+        "export_transactions_csv",
+        "export_business_data_csv",
+        "run_financial_python",
     ]
-    assert captured["tools"][4].tool_name == "export_transactions_csv"
-    assert captured["tools"][5].tool_name == "run_financial_python"
     assert "Never invent" in captured["system_prompt"]
     assert "verify a total returned by a data tool" in captured["system_prompt"]
+    assert "Use get_business_data" in captured["system_prompt"]
     assert "Skill loading is optional" in captured["system_prompt"]
     assert "The user does not need to ask for Python" in captured["system_prompt"]
     assert "do not answer until you have called" in captured["system_prompt"]

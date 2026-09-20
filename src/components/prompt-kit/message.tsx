@@ -47,7 +47,7 @@ export function ChatMessage({ message, onRetry }: { message: ChatMessageData; on
       {!isUser && <MessageAvatar fallback={<Bot size={16} strokeWidth={1.8} />} />}
       <div className={`flex max-w-[min(88%,42rem)] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {!isUser && Boolean(message.steps?.length) && (
-          <ChainOfThought>
+          <ChainOfThought steps={message.steps} isRunning={message.status === 'pending' || message.steps?.some((s) => s.status === 'running')}>
             {message.steps?.map((step) => <ChainOfThoughtStep key={step.id} step={step} defaultOpen={step.status === 'running'} />)}
           </ChainOfThought>
         )}

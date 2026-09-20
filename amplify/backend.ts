@@ -117,6 +117,10 @@ const supplierTable = backend.data.resources.tables['SupplierProfile'];
 const supplierTermsTable = backend.data.resources.tables['SupplierProductTerms'];
 const settingsTable = backend.data.resources.tables['MerchantFinancialSettings'];
 const recurringTable = backend.data.resources.tables['RecurringExpense'];
+const inventorySnapshotTable = backend.data.resources.tables['InventorySnapshot'];
+const inventoryItemTable = backend.data.resources.tables['InventoryItem'];
+const purchaseOrderTable = backend.data.resources.tables['PurchaseOrder'];
+const purchaseOrderLineItemTable = backend.data.resources.tables['PurchaseOrderLineItem'];
 
 const normalizerTables = [
   docTable,
@@ -132,6 +136,14 @@ const normalizerTables = [
   supplierTermsTable,
   settingsTable,
   recurringTable,
+];
+
+const agentTables = [
+  ...normalizerTables,
+  inventorySnapshotTable,
+  inventoryItemTable,
+  purchaseOrderTable,
+  purchaseOrderLineItemTable,
 ];
 
 for (const tbl of normalizerTables) {
@@ -258,6 +270,10 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
     SUPPLIER_PRODUCT_TERMS_TABLE_NAME: supplierTermsTable.tableName,
     MERCHANT_SETTINGS_TABLE_NAME: settingsTable.tableName,
     RECURRING_EXPENSE_TABLE_NAME: recurringTable.tableName,
+    INVENTORY_SNAPSHOT_TABLE_NAME: inventorySnapshotTable.tableName,
+    INVENTORY_ITEM_TABLE_NAME: inventoryItemTable.tableName,
+    PURCHASE_ORDER_TABLE_NAME: purchaseOrderTable.tableName,
+    PURCHASE_ORDER_LINE_ITEM_TABLE_NAME: purchaseOrderLineItemTable.tableName,
     CODE_EXECUTOR_FUNCTION_NAME: 'finfine-code-executor',
     CODE_EXECUTOR_REGION: agentStack.region,
     MODEL_BASE_URL: process.env.MODEL_BASE_URL || 'https://api.groq.com/openai/v1',
@@ -276,7 +292,7 @@ const agentLambda = new lambda.DockerImageFunction(agentStack, 'FinFineAgentBack
 });
 
 // Grant read permissions on all canonical tables to agent
-for (const tbl of normalizerTables) {
+for (const tbl of agentTables) {
   tbl.grantReadData(agentLambda);
 }
 
@@ -323,6 +339,10 @@ backend.addOutput({
     supplierProductTermsTableName: supplierTermsTable.tableName,
     merchantSettingsTableName: settingsTable.tableName,
     recurringExpenseTableName: recurringTable.tableName,
+    inventorySnapshotTableName: inventorySnapshotTable.tableName,
+    inventoryItemTableName: inventoryItemTable.tableName,
+    purchaseOrderTableName: purchaseOrderTable.tableName,
+    purchaseOrderLineItemTableName: purchaseOrderLineItemTable.tableName,
     agentSessionBucketName: backend.storage.resources.bucket.bucketName,
     agentSessionPrefix,
     agentSessionRetentionDays,

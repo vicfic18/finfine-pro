@@ -46,19 +46,59 @@ with the same payment reference are counted once.
 
 Returns scheduled payables and receivables for a chosen number of days.
 
+### `get_business_data`
+
+Reads one of the 17 canonical, read-only, tenant-scoped datasets through one
+validated tool. The dataset enum is authoritative; callers cannot pass a
+physical DynamoDB table name. The datasets are:
+
+`documents`, `transactions`, `obligations`, `merchant_settings`,
+`cash_positions`, `products`, `sales`, `sale_line_items`,
+`inventory_snapshots`, `inventory_items`, `purchases`, `purchase_line_items`,
+`suppliers`, `supplier_product_terms`, `purchase_orders`,
+`purchase_order_line_items`, and `recurring_expenses`.
+
+Supported filters are date ranges for documents, transactions, obligations,
+cash positions, sales, inventory snapshots, purchases, and purchase orders;
+status for documents, obligations, and purchase orders; product and parent IDs
+for line-item datasets; supplier IDs for purchases, supplier terms, and orders;
+and `active_only` for products and recurring expenses. Results always use the
+same `{dataset, count, availableCount, truncated, records, warning}` envelope.
+An unconfigured dataset is reported in `warning` and is not treated as an
+empty dataset. Line items connect to their parent sale, inventory snapshot,
+purchase, or order; line items and supplier terms connect to products; and
+transactions may reference products, suppliers, sales, purchases, or
+obligations.
+
 ### `export_transactions_csv`
 
 Exports up to 2,000 deduplicated transactions to a short-lived local CSV
 artifact. The model receives only its artifact ID, filename, row count, and
 column names. Transaction rows are not copied into the model conversation.
 
+### `export_business_data_csv`
+
+Exports one filtered canonical dataset to a short-lived CSV artifact. It uses
+the same validation, tenant-scoped reader, filters, and row limit as
+`get_business_data`; the returned `artifactId` and filename can be passed to
+`run_financial_python` for calculations. One dataset is exported per call.
+
 ### `run_financial_python`
 
 Runs validated Python in the private Lambda executor. Pass an `artifact_id`
-returned by `export_transactions_csv` to make the file available to Python as
-`transactions.csv`.
+returned by either CSV export tool to make that short-lived file available to
+Python under the returned filename.
 
 The executor includes NumPy, pandas, SciPy, and scikit-learn.
+
+The optional canonical table variables are `MERCHANT_SETTINGS_TABLE_NAME`,
+`CASH_POSITION_TABLE_NAME`, `PRODUCT_TABLE_NAME`, `SALE_TABLE_NAME`,
+`SALE_LINE_ITEM_TABLE_NAME`, `INVENTORY_SNAPSHOT_TABLE_NAME`,
+`INVENTORY_ITEM_TABLE_NAME`, `PURCHASE_TABLE_NAME`,
+`PURCHASE_LINE_ITEM_TABLE_NAME`, `SUPPLIER_PROFILE_TABLE_NAME`,
+`SUPPLIER_PRODUCT_TERMS_TABLE_NAME`, `PURCHASE_ORDER_TABLE_NAME`,
+`PURCHASE_ORDER_LINE_ITEM_TABLE_NAME`, and `RECURRING_EXPENSE_TABLE_NAME`.
+If one is not configured, the corresponding tool result says so explicitly.
 
 Users do not need to mention Python or choose tools. Direct lookups use the data
 tools. Questions requiring new arithmetic, grouping, comparisons, trends,

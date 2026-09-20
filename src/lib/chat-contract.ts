@@ -52,6 +52,7 @@ export type ConversationMessage = {
   status: 'complete';
   createdAt: string;
   requestId: string;
+  steps?: ChatStreamStep[];
 };
 
 export type ConversationListResponse = {
@@ -145,6 +146,20 @@ export function isChatSuccessResponse(value: unknown): value is ChatSuccessRespo
   );
 }
 
+export function isChatStreamStep(value: unknown): value is ChatStreamStep {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    value.id.length > 0 &&
+    value.id.length <= 256 &&
+    (value.kind === 'tool' || value.kind === 'code') &&
+    typeof value.title === 'string' &&
+    value.title.length > 0 &&
+    value.title.length <= 160 &&
+    (value.status === 'running' || value.status === 'complete' || value.status === 'error')
+  );
+}
+
 export function isChatStreamEvent(value: unknown): value is ChatStreamEvent {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   if (value.type === 'start') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.sessionId === 'string' && isUuid(value.sessionId);
@@ -152,8 +167,7 @@ export function isChatStreamEvent(value: unknown): value is ChatStreamEvent {
   if (value.type === 'done') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.sessionId === 'string' && isUuid(value.sessionId) && typeof value.answer === 'string';
   if (value.type === 'error') return typeof value.requestId === 'string' && isUuid(value.requestId) && typeof value.code === 'string' && typeof value.message === 'string';
   if (value.type === 'step') {
-    const step = value.step;
-    return isRecord(step) && typeof step.id === 'string' && step.id.length > 0 && step.id.length <= 256 && (step.kind === 'tool' || step.kind === 'code') && typeof step.title === 'string' && step.title.length > 0 && step.title.length <= 160 && (step.status === 'running' || step.status === 'complete' || step.status === 'error');
+    return isChatStreamStep(value.step);
   }
   return false;
 }
@@ -183,7 +197,8 @@ function isConversationMessage(value: unknown): value is ConversationMessage {
     value.status === 'complete' &&
     isIsoDate(value.createdAt) &&
     typeof value.requestId === 'string' &&
-    isUuid(value.requestId)
+    isUuid(value.requestId) &&
+    (value.steps === undefined || (Array.isArray(value.steps) && value.steps.every(isChatStreamStep)))
   );
 }
 

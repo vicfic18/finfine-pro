@@ -29,8 +29,9 @@ def _validate_financial_code(code: str) -> None:
     if "transactions = [" in code or "transactions=[" in code:
         raise ValueError(
             "Do not paste transaction lists into Python. Do not retry this code. "
-            "Use totals already returned by get_transactions, or call "
-            "export_transactions_csv and pass its artifactId."
+            "Use totals already returned by a data tool, or call "
+            "export_transactions_csv or export_business_data_csv and pass its "
+            "artifactId."
         )
 
     try:
@@ -64,10 +65,11 @@ def create_financial_python_tool(executor: Any) -> Any:
     ) -> dict[str, Any]:
         """Required for derived financial calculations and small data models.
 
-        For several transactions, first call export_transactions_csv and provide
-        its artifactId. Never paste a transaction list into code. Read the input
-        with pandas.read_csv("transactions.csv"). Keep the code short and print
-        the final values. For one or two scalar values, embedding them is okay.
+        For several business records, first call export_transactions_csv or
+        export_business_data_csv and provide its artifactId. Never paste a
+        record list into code. Read the returned CSV filename with
+        pandas.read_csv(...). Keep the code short and print the final values.
+        For one or two scalar values, embedding them is okay.
         Call this whenever an answer needs new arithmetic, grouping, comparison,
         trends, percentages, projections, statistics, optimization, or prediction.
         Do not answer a requested computation until this returns successfully.
@@ -75,8 +77,8 @@ def create_financial_python_tool(executor: Any) -> Any:
         Args:
             code: Focused Python code that prints its final result.
             purpose: A short explanation of the calculation or model.
-            artifact_id: Optional ID returned by export_transactions_csv. The
-                file is available to Python as transactions.csv.
+            artifact_id: Optional ID returned by a CSV export tool. The file is
+            available to Python under the filename returned by that tool.
         """
         _validate_financial_code(code)
         return executor.execute(

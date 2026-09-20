@@ -20,8 +20,10 @@ from finfine_agent.lambda_executor import LambdaPythonExecutor
 from finfine_agent.observability import TerminalModelTrace, TerminalToolTrace
 from finfine_agent.tools import (
     create_analysis_skill_tool,
+    create_business_data_csv_tool,
     create_financial_python_tool,
     create_transactions_csv_tool,
+    get_business_data,
     get_latest_balance,
     get_transactions,
     get_upcoming_obligations,
@@ -96,6 +98,7 @@ def create_agent(
     artifacts = artifact_store or LocalArtifactStore()
     executor = code_executor or create_code_executor(resolved, artifacts)
     csv_tool = create_transactions_csv_tool(artifacts)
+    business_csv_tool = create_business_data_csv_tool(artifacts)
     code_tool = create_financial_python_tool(executor)
     skill_tool = create_analysis_skill_tool()
 
@@ -115,7 +118,9 @@ def create_agent(
             get_latest_balance,
             get_transactions,
             get_upcoming_obligations,
+            get_business_data,
             csv_tool,
+            business_csv_tool,
             code_tool,
         ],
         **trace_options,
